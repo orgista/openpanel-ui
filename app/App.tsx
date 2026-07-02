@@ -8,6 +8,7 @@ import { ContentRow } from "./components/ContentRow";
 import { YouTubePlayer } from "./components/YouTubePlayer";
 import { ModeSetup } from "./components/ModeSetup";
 import { ContentDetailsModal } from "./components/ContentDetailsModal";
+import { TilePreview, type TileAnchor } from "./components/TilePreview";
 import { getVideos, addVideo, removeVideo, thumbnailUrl, type KioskVideo } from "./native/youtube";
 import { getAppMode, setAppMode as persistAppMode, isAppModeConfigured, type AppMode } from "./appConfig";
 import { SystemBridge, type InstalledApp, type KioskStatus } from "./native/SystemBridge";
@@ -115,6 +116,7 @@ export default function App() {
   const [videos, setVideos] = useState<KioskVideo[]>(getVideos());
   const [playingVideo, setPlayingVideo] = useState<KioskVideo | null>(null);
   const [detailsItem, setDetailsItem] = useState<ContentItem | null>(null);
+  const [preview, setPreview] = useState<{ item: ContentItem; anchor: TileAnchor } | null>(null);
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const isStandalone = appMode === "standalone";
 
@@ -294,7 +296,7 @@ export default function App() {
               title="Apps & Games"
               items={visibleApps}
               onLaunch={handleLaunch}
-              onDetails={setDetailsItem}
+              onPreview={(item, anchor) => setPreview({ item, anchor })}
               onFocus={setFeaturedItem}
             />
           )}
@@ -303,7 +305,7 @@ export default function App() {
               title="Videos"
               items={videoItems}
               onLaunch={handleLaunch}
-              onDetails={setDetailsItem}
+              onPreview={(item, anchor) => setPreview({ item, anchor })}
             />
           )}
         </div>
@@ -355,6 +357,14 @@ export default function App() {
           refreshKiosk();
         }}
         onUnlockKiosk={async () => { try { await SystemBridge.disableKioskLock(); } catch (e) { console.error("unlock kiosk", e); } refreshKiosk(); }}
+      />
+
+      <TilePreview
+        item={preview?.item ?? null}
+        anchor={preview?.anchor ?? null}
+        onClose={() => setPreview(null)}
+        onLaunch={(item) => { setPreview(null); handleLaunch(item); }}
+        onMoreInfo={(item) => { setPreview(null); setDetailsItem(item); }}
       />
 
       <ContentDetailsModal

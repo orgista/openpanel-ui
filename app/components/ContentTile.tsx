@@ -2,16 +2,17 @@ import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { Play } from "lucide-react";
 import type { ContentItem } from "../App";
+import type { TileAnchor } from "./TilePreview";
 
 interface ContentTileProps {
   item: ContentItem;
   onLaunch: () => void;
-  onDetails: () => void;
+  onPreview: (anchor: TileAnchor) => void;
   onFocus?: () => void;
 }
 
-// Netflix-style: one tap opens the details preview; a quick second tap
-// (double-tap) skips the preview and launches immediately.
+// Netflix-style: one tap expands the tile into its hover-card preview; a
+// quick second tap (double-tap) skips the preview and launches immediately.
 const DOUBLE_TAP_MS = 300;
 
 const BADGE_STYLES = {
@@ -20,8 +21,9 @@ const BADGE_STYLES = {
   trending: { label: "TRENDING", bg: "bg-[oklch(72%_0.19_142)]" },
 };
 
-export function ContentTile({ item, onLaunch, onDetails, onFocus }: ContentTileProps) {
+export function ContentTile({ item, onLaunch, onPreview, onFocus }: ContentTileProps) {
   const isLandscape = item.tileType === "landscape";
+  const tileRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef(0);
   const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -42,13 +44,15 @@ export function ContentTile({ item, onLaunch, onDetails, onFocus }: ContentTileP
       lastTapRef.current = now;
       pendingTapRef.current = setTimeout(() => {
         pendingTapRef.current = null;
-        onDetails();
+        const r = tileRef.current?.getBoundingClientRect();
+        if (r) onPreview({ left: r.left, top: r.top, width: r.width, height: r.height });
       }, DOUBLE_TAP_MS);
     }
   };
 
   return (
     <motion.div
+      ref={tileRef}
       className={`relative flex-shrink-0 cursor-pointer group ${
         isLandscape ? "w-72 h-44" : "w-56 h-80"
       }`}
