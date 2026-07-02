@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { Play } from "lucide-react";
 import type { ContentItem } from "../App";
@@ -5,8 +6,13 @@ import type { ContentItem } from "../App";
 interface ContentTileProps {
   item: ContentItem;
   onLaunch: () => void;
+  onDetails: () => void;
   onFocus?: () => void;
 }
+
+// Netflix-style: one tap opens the details preview; a quick second tap
+// (double-tap) skips the preview and launches immediately.
+const DOUBLE_TAP_MS = 300;
 
 const BADGE_STYLES = {
   new: { label: "NEW", bg: "bg-[oklch(48.8%_0.243_264.376)]" },
@@ -14,8 +20,32 @@ const BADGE_STYLES = {
   trending: { label: "TRENDING", bg: "bg-[oklch(72%_0.19_142)]" },
 };
 
-export function ContentTile({ item, onLaunch, onFocus }: ContentTileProps) {
+export function ContentTile({ item, onLaunch, onDetails, onFocus }: ContentTileProps) {
   const isLandscape = item.tileType === "landscape";
+  const lastTapRef = useRef(0);
+  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (pendingTapRef.current) clearTimeout(pendingTapRef.current);
+  }, []);
+
+  const handleTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+      lastTapRef.current = 0;
+      if (pendingTapRef.current) {
+        clearTimeout(pendingTapRef.current);
+        pendingTapRef.current = null;
+      }
+      onLaunch();
+    } else {
+      lastTapRef.current = now;
+      pendingTapRef.current = setTimeout(() => {
+        pendingTapRef.current = null;
+        onDetails();
+      }, DOUBLE_TAP_MS);
+    }
+  };
 
   return (
     <motion.div
@@ -25,7 +55,7 @@ export function ContentTile({ item, onLaunch, onFocus }: ContentTileProps) {
       whileHover={{ scale: 1.07, zIndex: 20 }}
       whileTap={{ scale: 0.97 }}
       transition={{ type: "spring", stiffness: 350, damping: 28 }}
-      onClick={onLaunch}
+      onClick={handleTap}
       onMouseEnter={onFocus}
     >
       <div className="relative w-full h-full rounded-lg overflow-hidden">

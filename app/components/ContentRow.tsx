@@ -7,10 +7,11 @@ interface ContentRowProps {
   title: string;
   items: ContentItem[];
   onLaunch: (item: ContentItem) => void;
+  onDetails: (item: ContentItem) => void;
   onFocus?: (item: ContentItem) => void;
 }
 
-export function ContentRow({ title, items, onLaunch, onFocus }: ContentRowProps) {
+export function ContentRow({ title, items, onLaunch, onDetails, onFocus }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true);
@@ -75,6 +76,7 @@ export function ContentRow({ title, items, onLaunch, onFocus }: ContentRowProps)
                 key={item.id}
                 item={item}
                 onLaunch={() => onLaunch(item)}
+                onDetails={() => onDetails(item)}
                 onFocus={() => onFocus?.(item)}
               />
             ))}

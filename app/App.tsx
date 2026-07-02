@@ -7,6 +7,7 @@ import { FeaturedHero } from "./components/FeaturedHero";
 import { ContentRow } from "./components/ContentRow";
 import { YouTubePlayer } from "./components/YouTubePlayer";
 import { ModeSetup } from "./components/ModeSetup";
+import { ContentDetailsModal } from "./components/ContentDetailsModal";
 import { getVideos, addVideo, removeVideo, thumbnailUrl, type KioskVideo } from "./native/youtube";
 import { getAppMode, setAppMode as persistAppMode, isAppModeConfigured, type AppMode } from "./appConfig";
 import { SystemBridge, type InstalledApp, type KioskStatus } from "./native/SystemBridge";
@@ -70,7 +71,7 @@ function toContentItem(app: InstalledApp): ContentItem {
     packageName: app.packageName,
     iconUrl: app.icon ? `data:image/png;base64,${app.icon}` : undefined,
     coverUrl: gradientFor(app.packageName),
-    description: `Tap to open ${app.label}`,
+    description: `Opens ${app.label} on this device.`,
     genre: "App",
     category: "apps",
     tileType: "landscape",
@@ -113,6 +114,7 @@ export default function App() {
   const [needsModeSetup, setNeedsModeSetup] = useState(false);
   const [videos, setVideos] = useState<KioskVideo[]>(getVideos());
   const [playingVideo, setPlayingVideo] = useState<KioskVideo | null>(null);
+  const [detailsItem, setDetailsItem] = useState<ContentItem | null>(null);
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const isStandalone = appMode === "standalone";
 
@@ -274,6 +276,7 @@ export default function App() {
           <FeaturedHero
             item={featured}
             onLaunch={() => handleLaunch(featured)}
+            onMoreInfo={() => setDetailsItem(featured)}
           />
         ) : (
           <div className="h-[520px] flex items-center justify-center">
@@ -291,6 +294,7 @@ export default function App() {
               title="Apps & Games"
               items={visibleApps}
               onLaunch={handleLaunch}
+              onDetails={setDetailsItem}
               onFocus={setFeaturedItem}
             />
           )}
@@ -299,6 +303,7 @@ export default function App() {
               title="Videos"
               items={videoItems}
               onLaunch={handleLaunch}
+              onDetails={setDetailsItem}
             />
           )}
         </div>
@@ -350,6 +355,12 @@ export default function App() {
           refreshKiosk();
         }}
         onUnlockKiosk={async () => { try { await SystemBridge.disableKioskLock(); } catch (e) { console.error("unlock kiosk", e); } refreshKiosk(); }}
+      />
+
+      <ContentDetailsModal
+        item={detailsItem}
+        onClose={() => setDetailsItem(null)}
+        onLaunch={(item) => { setDetailsItem(null); handleLaunch(item); }}
       />
 
       {playingVideo && (
