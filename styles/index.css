@@ -1,3 +1,10 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Keep focused fields clear of the soft keyboard when the viewport resizes. */
+input,
+select,
+textarea {
+  scroll-margin-block: 5rem;
+}

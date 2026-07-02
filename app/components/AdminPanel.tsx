@@ -103,7 +103,7 @@ export function AdminPanel({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-5xl max-h-[80vh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
+        className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-5xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
       >
         <div className="flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
           <h2 className="text-3xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>Admin Panel</h2>

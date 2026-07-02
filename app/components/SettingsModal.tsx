@@ -263,14 +263,16 @@ export function SettingsModal({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 50 }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
+          className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-4xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
         >
           {showAdminAuth ? (
-            <div className="p-12 flex items-center justify-center flex-1">
-              <AdminAuth
-                onAuthenticated={() => { onEnterAdmin(); setShowAdminAuth(false); }}
-                onCancel={() => setShowAdminAuth(false)}
-              />
+            <div className="flex-1 overflow-y-auto">
+              <div className="min-h-full p-8 flex items-center justify-center">
+                <AdminAuth
+                  onAuthenticated={() => { onEnterAdmin(); setShowAdminAuth(false); }}
+                  onCancel={() => setShowAdminAuth(false)}
+                />
+              </div>
             </div>
           ) : (
             <>
