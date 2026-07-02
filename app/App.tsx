@@ -7,8 +7,6 @@ import { FeaturedHero } from "./components/FeaturedHero";
 import { ContentRow } from "./components/ContentRow";
 import { YouTubePlayer } from "./components/YouTubePlayer";
 import { ModeSetup } from "./components/ModeSetup";
-import { ContentDetailsModal } from "./components/ContentDetailsModal";
-import { TilePreview, type TileAnchor } from "./components/TilePreview";
 import { getVideos, addVideo, removeVideo, thumbnailUrl, type KioskVideo } from "./native/youtube";
 import { getAppMode, setAppMode as persistAppMode, isAppModeConfigured, type AppMode } from "./appConfig";
 import { SystemBridge, type InstalledApp, type KioskStatus } from "./native/SystemBridge";
@@ -115,8 +113,6 @@ export default function App() {
   const [needsModeSetup, setNeedsModeSetup] = useState(false);
   const [videos, setVideos] = useState<KioskVideo[]>(getVideos());
   const [playingVideo, setPlayingVideo] = useState<KioskVideo | null>(null);
-  const [detailsItem, setDetailsItem] = useState<ContentItem | null>(null);
-  const [preview, setPreview] = useState<{ item: ContentItem; anchor: TileAnchor } | null>(null);
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const isStandalone = appMode === "standalone";
 
@@ -138,7 +134,9 @@ export default function App() {
       const allowed = installed.filter(isAllowed).map(toContentItem);
       allowed.sort((a, b) => a.title.localeCompare(b.title));
       setApps(allowed);
-      setFeaturedItem(prev => prev && allowed.some(a => a.id === prev.id) ? prev : allowed[0] ?? null);
+      // Keep the current selection across refreshes (videos aren't in the
+      // installed-apps list, so they'd otherwise be deselected every poll).
+      setFeaturedItem(prev => prev && (prev.isVideo || allowed.some(a => a.id === prev.id)) ? prev : allowed[0] ?? null);
     } catch (e) {
       console.error("Failed to load apps", e);
     }
@@ -278,7 +276,6 @@ export default function App() {
           <FeaturedHero
             item={featured}
             onLaunch={() => handleLaunch(featured)}
-            onMoreInfo={() => setDetailsItem(featured)}
           />
         ) : (
           <div className="h-[520px] flex items-center justify-center">
@@ -295,17 +292,18 @@ export default function App() {
             <ContentRow
               title="Apps & Games"
               items={visibleApps}
+              selectedId={featured?.id ?? null}
+              onSelect={setFeaturedItem}
               onLaunch={handleLaunch}
-              onPreview={(item, anchor) => setPreview({ item, anchor })}
-              onFocus={setFeaturedItem}
             />
           )}
           {videoItems.length > 0 && (
             <ContentRow
               title="Videos"
               items={videoItems}
+              selectedId={featured?.id ?? null}
+              onSelect={setFeaturedItem}
               onLaunch={handleLaunch}
-              onPreview={(item, anchor) => setPreview({ item, anchor })}
             />
           )}
         </div>
@@ -357,20 +355,6 @@ export default function App() {
           refreshKiosk();
         }}
         onUnlockKiosk={async () => { try { await SystemBridge.disableKioskLock(); } catch (e) { console.error("unlock kiosk", e); } refreshKiosk(); }}
-      />
-
-      <TilePreview
-        item={preview?.item ?? null}
-        anchor={preview?.anchor ?? null}
-        onClose={() => setPreview(null)}
-        onLaunch={(item) => { setPreview(null); handleLaunch(item); }}
-        onMoreInfo={(item) => { setPreview(null); setDetailsItem(item); }}
-      />
-
-      <ContentDetailsModal
-        item={detailsItem}
-        onClose={() => setDetailsItem(null)}
-        onLaunch={(item) => { setDetailsItem(null); handleLaunch(item); }}
       />
 
       {playingVideo && (

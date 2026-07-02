@@ -1,19 +1,13 @@
-import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { Play } from "lucide-react";
 import type { ContentItem } from "../App";
-import type { TileAnchor } from "./TilePreview";
 
 interface ContentTileProps {
   item: ContentItem;
+  isSelected: boolean;
+  onSelect: () => void;
   onLaunch: () => void;
-  onPreview: (anchor: TileAnchor) => void;
-  onFocus?: () => void;
 }
-
-// Netflix-style: one tap expands the tile into its hover-card preview; a
-// quick second tap (double-tap) skips the preview and launches immediately.
-const DOUBLE_TAP_MS = 300;
 
 const BADGE_STYLES = {
   new: { label: "NEW", bg: "bg-[oklch(48.8%_0.243_264.376)]" },
@@ -21,46 +15,22 @@ const BADGE_STYLES = {
   trending: { label: "TRENDING", bg: "bg-[oklch(72%_0.19_142)]" },
 };
 
-export function ContentTile({ item, onLaunch, onPreview, onFocus }: ContentTileProps) {
+// First tap selects the tile — it pops (scale + play chip) and the hero
+// switches to it. Tapping the already-selected tile launches. Same
+// focus-then-open flow as a TV launcher.
+export function ContentTile({ item, isSelected, onSelect, onLaunch }: ContentTileProps) {
   const isLandscape = item.tileType === "landscape";
-  const tileRef = useRef<HTMLDivElement>(null);
-  const lastTapRef = useRef(0);
-  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (pendingTapRef.current) clearTimeout(pendingTapRef.current);
-  }, []);
-
-  const handleTap = () => {
-    const now = Date.now();
-    if (now - lastTapRef.current < DOUBLE_TAP_MS) {
-      lastTapRef.current = 0;
-      if (pendingTapRef.current) {
-        clearTimeout(pendingTapRef.current);
-        pendingTapRef.current = null;
-      }
-      onLaunch();
-    } else {
-      lastTapRef.current = now;
-      pendingTapRef.current = setTimeout(() => {
-        pendingTapRef.current = null;
-        const r = tileRef.current?.getBoundingClientRect();
-        if (r) onPreview({ left: r.left, top: r.top, width: r.width, height: r.height });
-      }, DOUBLE_TAP_MS);
-    }
-  };
 
   return (
     <motion.div
-      ref={tileRef}
       className={`relative flex-shrink-0 cursor-pointer group ${
         isLandscape ? "w-72 h-44" : "w-56 h-80"
-      }`}
+      } ${isSelected ? "z-20" : ""}`}
+      animate={{ scale: isSelected ? 1.07 : 1 }}
       whileHover={{ scale: 1.07, zIndex: 20 }}
       whileTap={{ scale: 0.97 }}
       transition={{ type: "spring", stiffness: 350, damping: 28 }}
-      onClick={handleTap}
-      onMouseEnter={onFocus}
+      onClick={() => (isSelected ? onLaunch() : onSelect())}
     >
       <div className="relative w-full h-full rounded-lg overflow-hidden">
         {/* Poster background */}
@@ -89,11 +59,19 @@ export function ContentTile({ item, onLaunch, onPreview, onFocus }: ContentTileP
           </div>
         )}
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300" />
+        {/* Selection / hover overlay */}
+        <div
+          className={`absolute inset-0 transition-all duration-300 ${
+            isSelected ? "bg-black/40" : "bg-black/0 group-hover:bg-black/40"
+          }`}
+        />
 
-        {/* Play button on hover */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        {/* Play chip — persistent while selected, otherwise on hover */}
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+        >
           <div className="w-11 h-11 rounded-full bg-white/95 flex items-center justify-center shadow-xl">
             <Play className="w-5 h-5 text-black ml-0.5" fill="currentColor" />
           </div>
@@ -127,7 +105,11 @@ export function ContentTile({ item, onLaunch, onPreview, onFocus }: ContentTileP
         )}
 
         {/* Focus ring */}
-        <div className="absolute inset-0 rounded-lg ring-2 ring-transparent group-hover:ring-white/40 transition-all duration-300 pointer-events-none" />
+        <div
+          className={`absolute inset-0 rounded-lg ring-2 transition-all duration-300 pointer-events-none ${
+            isSelected ? "ring-white/40" : "ring-transparent group-hover:ring-white/40"
+          }`}
+        />
       </div>
     </motion.div>
   );

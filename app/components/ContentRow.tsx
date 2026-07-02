@@ -2,17 +2,16 @@ import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ContentTile } from "./ContentTile";
 import type { ContentItem } from "../App";
-import type { TileAnchor } from "./TilePreview";
 
 interface ContentRowProps {
   title: string;
   items: ContentItem[];
+  selectedId: string | null;
+  onSelect: (item: ContentItem) => void;
   onLaunch: (item: ContentItem) => void;
-  onPreview: (item: ContentItem, anchor: TileAnchor) => void;
-  onFocus?: (item: ContentItem) => void;
 }
 
-export function ContentRow({ title, items, onLaunch, onPreview, onFocus }: ContentRowProps) {
+export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true);
@@ -76,9 +75,9 @@ export function ContentRow({ title, items, onLaunch, onPreview, onFocus }: Conte
               <ContentTile
                 key={item.id}
                 item={item}
+                isSelected={item.id === selectedId}
+                onSelect={() => onSelect(item)}
                 onLaunch={() => onLaunch(item)}
-                onPreview={(anchor) => onPreview(item, anchor)}
-                onFocus={() => onFocus?.(item)}
               />
             ))}
           </div>

@@ -1,15 +1,24 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Play, Info, Star } from "lucide-react";
+import { Play, Star } from "lucide-react";
 import type { ContentItem } from "../App";
-import { formatDuration } from "./ContentDetailsModal";
 
 interface FeaturedHeroProps {
   item: ContentItem;
   onLaunch: () => void;
-  onMoreInfo: () => void;
 }
 
-export function FeaturedHero({ item, onLaunch, onMoreInfo }: FeaturedHeroProps) {
+const formatDuration = (dur?: string) => {
+  if (!dur) return null;
+  const parts = dur.split(":");
+  if (parts.length === 3) {
+    const h = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+  return dur;
+};
+
+export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
 
   return (
     <AnimatePresence mode="wait">
@@ -132,17 +141,6 @@ export function FeaturedHero({ item, onLaunch, onMoreInfo }: FeaturedHeroProps) 
               >
                 <Play className="w-5 h-5" fill="currentColor" />
                 {item.isVideo ? "Play" : "Open"}
-              </motion.button>
-
-              <motion.button
-                onClick={onMoreInfo}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex items-center gap-2.5 px-7 py-3.5 bg-[oklch(98%_0_0)]/20 backdrop-blur-sm text-[oklch(95%_0_0)] rounded-md transition-colors hover:bg-[oklch(98%_0_0)]/30 border border-[oklch(98%_0_0)]/10"
-                style={{ fontWeight: 500, fontSize: "0.9375rem" }}
-              >
-                <Info className="w-5 h-5" />
-                More Info
               </motion.button>
             </motion.div>
           </div>
