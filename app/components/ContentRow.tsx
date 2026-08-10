@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ContentTile } from "./ContentTile";
 import type { ContentItem } from "../App";
@@ -13,6 +13,7 @@ interface ContentRowProps {
 
 export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true);
 
@@ -32,6 +33,20 @@ export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: Con
     setShowRight(scrollLeft < scrollWidth - clientWidth - 8);
   };
 
+  useEffect(() => {
+    handleScroll();
+    window.addEventListener("resize", handleScroll);
+    return () => window.removeEventListener("resize", handleScroll);
+  }, [items.length]);
+
+  const moveTileFocus = (index: number, direction: "left" | "right") => {
+    const nextIndex = index + (direction === "right" ? 1 : -1);
+    const next = tileRefs.current[nextIndex];
+    if (!next) return;
+    next.focus();
+    next.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  };
+
   return (
     <div className="mb-10 group/row">
       {/* Row header */}
@@ -47,6 +62,8 @@ export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: Con
         {showLeft && (
           <button
             onClick={() => scroll("left")}
+            tabIndex={-1}
+            aria-label={`Scroll ${title} left`}
             className="absolute left-0 top-0 bottom-0 z-10 w-14 flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity bg-gradient-to-r from-[oklch(11%_0_0)] to-transparent"
           >
             <ChevronLeft className="w-7 h-7 text-white" strokeWidth={2.5} />
@@ -57,6 +74,8 @@ export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: Con
         {showRight && (
           <button
             onClick={() => scroll("right")}
+            tabIndex={-1}
+            aria-label={`Scroll ${title} right`}
             className="absolute right-0 top-0 bottom-0 z-10 w-14 flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity bg-gradient-to-l from-[oklch(11%_0_0)] to-transparent"
           >
             <ChevronRight className="w-7 h-7 text-white" strokeWidth={2.5} />
@@ -71,13 +90,15 @@ export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: Con
           style={{ scrollbarWidth: "none" }}
         >
           <div className="flex gap-4">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <ContentTile
                 key={item.id}
                 item={item}
                 isSelected={item.id === selectedId}
                 onSelect={() => onSelect(item)}
                 onLaunch={() => onLaunch(item)}
+                onNavigate={(direction) => moveTileFocus(index, direction)}
+                buttonRef={(element) => { tileRefs.current[index] = element; }}
               />
             ))}
           </div>

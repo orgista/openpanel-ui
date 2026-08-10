@@ -1,21 +1,20 @@
 import { motion } from "motion/react";
-import { X, Plus, Trash2, Clock, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle } from "lucide-react";
+import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw } from "lucide-react";
 import { LucideIcon } from "lucide-react";
-import { useState } from "react";
-import { type KioskVideo, thumbnailUrl } from "../native/youtube";
-import type { KioskStatus } from "../native/SystemBridge";
+import { useEffect, useRef, useState } from "react";
+import { type KioskYouTubeItem, thumbnailUrl } from "../native/youtube";
+import type { DeviceProfile, KioskStatus } from "../native/SystemBridge";
 import type { AppMode } from "../appConfig";
+import { YouTubeSearchPanel } from "./YouTubeSearchPanel";
+import { PermissionsManager } from "./PermissionsManager";
+import { dismissSoftKeyboard } from "../native/keyboard";
+import { clearDiagnostics, getDiagnostics, type DiagnosticEntry } from "../native/diagnostics";
 
 interface App {
   id: string;
   name: string;
   icon: LucideIcon;
   gradient: string;
-}
-
-interface AppTimeLimit {
-  appId: string;
-  limitMinutes: number;
 }
 
 interface AdminPanelProps {
@@ -25,14 +24,15 @@ interface AdminPanelProps {
   availableApps: App[];
   onAddApp: (appId: string) => void;
   onRemoveApp: (appId: string) => void;
-  appTimeLimits: AppTimeLimit[];
-  onSetTimeLimit: (appId: string, minutes: number) => void;
   inactivityTimeout: number;
   onSetInactivityTimeout: (minutes: number) => void;
-  // Locked YouTube links
-  videos: KioskVideo[];
-  onAddVideo: (url: string, title: string) => boolean; // false if URL invalid
-  onRemoveVideo: (videoId: string) => void;
+  allowSameChannelRecommendations: boolean;
+  onSetAllowSameChannelRecommendations: (allowed: boolean) => void;
+  // Locked YouTube videos, channels, and playlists.
+  videos: KioskYouTubeItem[];
+  onAddVideo: (url: string, title: string, thumbnailUrl?: string | null) => boolean; // false if source is invalid
+  onRemoveVideo: (id: string) => void;
+  deviceProfile?: DeviceProfile | null;
   // Standalone (non-ArborXR) kiosk lockdown
   standalone: boolean;
   appMode: AppMode;
@@ -43,6 +43,24 @@ interface AdminPanelProps {
   onRequestDeviceAdmin: () => void;
   onLockKiosk: () => void;
   onUnlockKiosk: () => void;
+  onClearDeviceOwner: () => void;
+  onResetAdmin: () => void;
+  initialTab?: "apps" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+}
+
+type AdminTab = "apps" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+
+const adminBodyFocusableSelector = [
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+export function resetAdminPanelScroll(panel: HTMLDivElement | null) {
+  if (panel) panel.scrollTop = 0;
 }
 
 export function AdminPanel({
@@ -52,13 +70,14 @@ export function AdminPanel({
   availableApps,
   onAddApp,
   onRemoveApp,
-  appTimeLimits,
-  onSetTimeLimit,
   inactivityTimeout,
   onSetInactivityTimeout,
+  allowSameChannelRecommendations,
+  onSetAllowSameChannelRecommendations,
   videos,
   onAddVideo,
   onRemoveVideo,
+  deviceProfile,
   standalone,
   appMode,
   onSetAppMode,
@@ -68,19 +87,99 @@ export function AdminPanel({
   onRequestDeviceAdmin,
   onLockKiosk,
   onUnlockKiosk,
+  onClearDeviceOwner,
+  onResetAdmin,
+  initialTab = "apps",
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"apps" | "youtube" | "kiosk" | "limits" | "power">("apps");
+  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
   const [videoUrl, setVideoUrl] = useState("");
   const [videoTitle, setVideoTitle] = useState("");
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [timeoutDraft, setTimeoutDraft] = useState(String(inactivityTimeout));
+  const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>(
+    () => getDiagnostics().slice().reverse(),
+  );
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Partial<Record<typeof activeTab, HTMLButtonElement | null>>>({});
+  const tabOrder: AdminTab[] = standalone
+    ? ["apps", "youtube", "power", "kiosk", "diagnostics", "security"]
+    : ["apps", "youtube", "power", "diagnostics", "security"];
 
-  const getTimeLimit = (appId: string) => {
-    return appTimeLimits.find(t => t.appId === appId)?.limitMinutes || 0;
+  const refreshDiagnostics = () => setDiagnostics(getDiagnostics().slice().reverse());
+
+  const bodyFocusableElements = () => Array.from(
+    bodyRef.current?.querySelectorAll<HTMLElement>(adminBodyFocusableSelector) ?? [],
+  ).filter((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+
+  const focusFirstBodyControl = () => {
+    const first = bodyFocusableElements()[0];
+    first?.focus({ preventScroll: true });
+    first?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
-  const handleAddVideo = () => {
+  const handleTabKeyDown = (tab: AdminTab, event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown" && tab === activeTab) {
+      event.preventDefault();
+      focusFirstBodyControl();
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const index = tabOrder.indexOf(tab);
+    const offset = event.key === "ArrowLeft" ? -1 : 1;
+    const next = tabOrder[Math.min(tabOrder.length - 1, Math.max(0, index + offset))];
+    if (next === tab) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveTab(next);
+    tabRefs.current[next]?.focus();
+    tabRefs.current[next]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+
+  const handleBodyKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowUp") return;
+    const [first] = bodyFocusableElements();
+    if (!first || document.activeElement !== first) return;
+    event.preventDefault();
+    event.stopPropagation();
+    tabRefs.current[activeTab]?.focus();
+  };
+
+  useEffect(() => {
+    setTimeoutDraft(String(inactivityTimeout));
+  }, [inactivityTimeout]);
+
+  useEffect(() => {
+    resetAdminPanelScroll(bodyRef.current);
+    if (!isOpen) return;
+    if (activeTab === "diagnostics") refreshDiagnostics();
+    const focusTimer = window.setTimeout(() => tabRefs.current[activeTab]?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [activeTab, isOpen]);
+
+  const updateTimeoutDraft = (next: string) => {
+    setTimeoutDraft(next);
+    if (!/^\d+$/.test(next)) return;
+    const minutes = Number(next);
+    if (minutes >= 1 && minutes <= 60) onSetInactivityTimeout(minutes);
+  };
+
+  const commitTimeoutDraft = () => {
+    const parsed = Number(timeoutDraft);
+    const minutes = Number.isFinite(parsed) && timeoutDraft.trim() !== ""
+      ? Math.min(60, Math.max(1, Math.round(parsed)))
+      : inactivityTimeout;
+    setTimeoutDraft(String(minutes));
+    onSetInactivityTimeout(minutes);
+  };
+
+  const handleAddVideo = async () => {
+    await dismissSoftKeyboard();
     if (!onAddVideo(videoUrl, videoTitle)) {
-      setVideoError("That doesn't look like a YouTube link.");
+      setVideoError("Use a YouTube video, playlist, or channel URL.");
       return;
     }
     setVideoUrl("");
@@ -95,29 +194,39 @@ export function AdminPanel({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-[oklch(14.5%_0_0)]/80 backdrop-blur-xl z-50 flex items-center justify-center"
+      data-dpad-scope
+      className="admin-panel-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 backdrop-blur-xl z-50 flex items-center justify-center"
       onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
     >
       <motion.div
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-5xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
+        className="admin-panel-card bg-[oklch(20.5%_0_0)] rounded-none sm:rounded-2xl w-full max-w-5xl max-h-[100dvh] sm:max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
       >
-        <div className="flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
+        <div className="admin-panel-header flex items-center justify-between p-4 sm:p-8 border-b border-[oklch(26.9%_0_0)]">
           <h2 className="text-3xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>Admin Panel</h2>
           <button
             onClick={onClose}
+            aria-label="Close Admin Panel"
             className="p-2 hover:bg-[oklch(26.9%_0_0)] rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-[oklch(70.8%_0_0)]" />
           </button>
         </div>
 
-        <div className="flex gap-2 px-8 pt-6 pb-4 border-b border-[oklch(26.9%_0_0)]">
+        <div className="admin-panel-tabs flex shrink-0 gap-2 px-4 sm:px-8 pt-4 sm:pt-6 pb-4 border-b border-[oklch(26.9%_0_0)] overflow-x-auto">
           <button
+            ref={(element) => { tabRefs.current.apps = element; }}
             onClick={() => setActiveTab("apps")}
+            onKeyDown={(event) => handleTabKeyDown("apps", event)}
             className={`px-4 py-2 rounded-lg transition-colors ${
               activeTab === "apps"
                 ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -128,7 +237,9 @@ export function AdminPanel({
             Applications
           </button>
           <button
+            ref={(element) => { tabRefs.current.youtube = element; }}
             onClick={() => setActiveTab("youtube")}
+            onKeyDown={(event) => handleTabKeyDown("youtube", event)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
               activeTab === "youtube"
                 ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -140,19 +251,9 @@ export function AdminPanel({
             YouTube
           </button>
           <button
-            onClick={() => setActiveTab("limits")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "limits"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <Clock className="w-4 h-4" />
-            Time Limits
-          </button>
-          <button
+            ref={(element) => { tabRefs.current.power = element; }}
             onClick={() => setActiveTab("power")}
+            onKeyDown={(event) => handleTabKeyDown("power", event)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
               activeTab === "power"
                 ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -161,11 +262,13 @@ export function AdminPanel({
             style={{ fontWeight: 500 }}
           >
             <Power className="w-4 h-4" />
-            Power Settings
+            Screen Saver
           </button>
           {standalone && (
             <button
+              ref={(element) => { tabRefs.current.kiosk = element; }}
               onClick={() => setActiveTab("kiosk")}
+              onKeyDown={(event) => handleTabKeyDown("kiosk", event)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                 activeTab === "kiosk"
                   ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -177,14 +280,47 @@ export function AdminPanel({
               Kiosk Lock
             </button>
           )}
+          <button
+            ref={(element) => { tabRefs.current.diagnostics = element; }}
+            onClick={() => setActiveTab("diagnostics")}
+            onKeyDown={(event) => handleTabKeyDown("diagnostics", event)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              activeTab === "diagnostics"
+                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
+                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
+            }`}
+            style={{ fontWeight: 500 }}
+          >
+            <Bug className="w-4 h-4" />
+            Bug Log
+          </button>
+          <button
+            ref={(element) => { tabRefs.current.security = element; }}
+            onClick={() => { setActiveTab("security"); setConfirmReset(false); }}
+            onKeyDown={(event) => handleTabKeyDown("security", event)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              activeTab === "security"
+                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
+                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
+            }`}
+            style={{ fontWeight: 500 }}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Security
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8">
+        <div
+          ref={bodyRef}
+          data-dpad-content
+          onKeyDownCapture={handleBodyKeyDownCapture}
+          className="admin-panel-body flex-1 overflow-y-auto p-4 sm:p-8"
+        >
           {activeTab === "apps" && (
             <>
               <div className="mb-12">
                 <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-6" style={{ fontWeight: 500 }}>Allowed Applications</h3>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {apps.map((app) => (
                     <div
                       key={app.id}
@@ -196,18 +332,29 @@ export function AdminPanel({
                       </div>
                       <button
                         onClick={() => onRemoveApp(app.id)}
-                        className="absolute top-2 right-2 p-2 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[oklch(63.7%_0.237_25.331)]/30"
+                        className="absolute top-2 right-2 p-2 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition-opacity hover:bg-[oklch(63.7%_0.237_25.331)]/30"
+                        aria-label={`Hide ${app.name}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   ))}
+                  {apps.length === 0 && (
+                    <div
+                      tabIndex={0}
+                      role="status"
+                      aria-label="No allowed applications"
+                      className="col-span-full rounded-lg border border-dashed border-[oklch(43.9%_0_0)] px-6 py-8 text-center text-[oklch(70.8%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80"
+                    >
+                      No allowed applications are available on this device.
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div>
                 <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-6" style={{ fontWeight: 500 }}>Available Applications</h3>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {availableApps
                     .filter((app) => !apps.find((a) => a.id === app.id))
                     .map((app) => (
@@ -221,12 +368,23 @@ export function AdminPanel({
                         </div>
                         <button
                           onClick={() => onAddApp(app.id)}
-                          className="absolute top-2 right-2 p-2 bg-[oklch(48.8%_0.243_264.376)]/20 text-[oklch(48.8%_0.243_264.376)] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[oklch(48.8%_0.243_264.376)]/30"
+                          className="absolute top-2 right-2 p-2 bg-[oklch(48.8%_0.243_264.376)]/20 text-[oklch(48.8%_0.243_264.376)] rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition-opacity hover:bg-[oklch(48.8%_0.243_264.376)]/30"
+                          aria-label={`Show ${app.name}`}
                         >
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
+                  {availableApps.filter((app) => !apps.find((allowed) => allowed.id === app.id)).length === 0 && (
+                    <div
+                      tabIndex={0}
+                      role="status"
+                      aria-label="No additional applications"
+                      className="col-span-full rounded-lg border border-dashed border-[oklch(43.9%_0_0)] px-6 py-8 text-center text-[oklch(70.8%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80"
+                    >
+                      No additional applications are available to add.
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -234,26 +392,69 @@ export function AdminPanel({
 
           {activeTab === "youtube" && (
             <div>
-              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Locked YouTube Videos</h3>
+              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>YouTube Videos, Channels &amp; Playlists</h3>
               <p className="text-[oklch(70.8%_0_0)] text-sm mb-6" style={{ fontWeight: 400 }}>
-                Added videos appear as tiles on the home screen and play in a locked player — playback controls only, no recommendations or way out to YouTube.
+                Each approved source appears as one tile and plays inside OpenPanel's restricted player. Channel tiles show that channel's uploads feed.
               </p>
 
-              <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-5 mb-8">
-                <label className="block text-[oklch(70.8%_0_0)] text-sm mb-2" style={{ fontWeight: 500 }}>YouTube link</label>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border border-[oklch(43.9%_0_0)] bg-[oklch(26.9%_0_0)] p-4 sm:p-5 mb-6">
+                <div>
+                  <div className="text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>
+                    Same-channel recommendations
+                  </div>
+                  <p className="text-[oklch(70.8%_0_0)] text-xs sm:text-sm">
+                    Let viewers choose another video from the same approved channel when playback ends. Turn this off to return to OpenPanel instead.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={allowSameChannelRecommendations}
+                  aria-label="Allow same-channel YouTube recommendations"
+                  onClick={() => onSetAllowSameChannelRecommendations(!allowSameChannelRecommendations)}
+                  className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${
+                    allowSameChannelRecommendations
+                      ? "border-[oklch(48.8%_0.243_264.376)] bg-[oklch(48.8%_0.243_264.376)]"
+                      : "border-[oklch(55.6%_0_0)] bg-[oklch(20.5%_0_0)]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white transition-transform ${
+                      allowSameChannelRecommendations ? "translate-x-8" : "translate-x-1"
+                    }`}
+                  />
+                  <span className="sr-only">{allowSameChannelRecommendations ? "On" : "Off"}</span>
+                </button>
+              </div>
+
+              <YouTubeSearchPanel
+                approvedItems={videos}
+                deviceProfile={deviceProfile}
+                onAdd={onAddVideo}
+              />
+
+              <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-4 sm:p-5 mb-8">
+                <div className="text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>Paste a YouTube link</div>
+                <p className="text-[oklch(60%_0_0)] text-xs sm:text-sm mb-4">Use this when you already have a video, playlist, or channel URL. Channel names and handles can be verified above.</p>
+                <label className="block text-[oklch(70.8%_0_0)] text-sm mb-2" style={{ fontWeight: 500 }}>YouTube URL</label>
                 <input
                   type="text"
+                  inputMode="url"
+                  enterKeyHint="next"
+                  autoComplete="off"
                   value={videoUrl}
                   onChange={(e) => { setVideoUrl(e.target.value); setVideoError(null); }}
                   onKeyDown={(e) => { if (e.key === "Enter") handleAddVideo(); }}
-                  placeholder="https://www.youtube.com/watch?v=…  or  https://youtu.be/…"
+                  placeholder="youtube.com video, playlist, or channel URL"
                   className="w-full mb-4 px-4 py-2.5 bg-[oklch(20.5%_0_0)] text-[oklch(98.5%_0_0)] rounded-lg border border-[oklch(43.9%_0_0)] focus:border-[oklch(48.8%_0.243_264.376)] focus:outline-none placeholder:text-[oklch(43.9%_0_0)]"
                   style={{ fontWeight: 400 }}
                 />
                 <label className="block text-[oklch(70.8%_0_0)] text-sm mb-2" style={{ fontWeight: 500 }}>Title (optional)</label>
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <input
                     type="text"
+                    enterKeyHint="done"
+                    autoComplete="off"
                     value={videoTitle}
                     onChange={(e) => setVideoTitle(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAddVideo(); }}
@@ -272,27 +473,37 @@ export function AdminPanel({
                 {videoError && <p className="mt-3 text-[oklch(70.4%_0.191_22.216)] text-sm">{videoError}</p>}
               </div>
 
+              <h4 className="text-lg text-[oklch(98.5%_0_0)] mb-3" style={{ fontWeight: 500 }}>
+                Allowed YouTube Sources ({videos.length})
+              </h4>
               {videos.length === 0 ? (
-                <div className="text-center p-8 text-[oklch(55.6%_0_0)]">No locked videos yet. Paste a YouTube link above.</div>
+                <div className="text-center p-8 text-[oklch(55.6%_0_0)]">No approved YouTube sources yet. Verify a channel above or paste a link.</div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {videos.map((v) => (
                     <div
-                      key={v.videoId}
+                      key={v.id}
                       className="relative group flex items-center gap-4 bg-[oklch(26.9%_0_0)] rounded-lg p-3 border border-[oklch(26.9%_0_0)] hover:border-[oklch(43.9%_0_0)] transition-colors"
                     >
-                      <img
-                        src={thumbnailUrl(v.videoId)}
-                        alt=""
-                        className="w-28 h-16 rounded object-cover bg-[oklch(20.5%_0_0)] shrink-0"
-                        draggable={false}
-                      />
+                      {v.kind === "video" || v.thumbnailUrl ? (
+                        <img
+                          src={v.kind === "video" ? thumbnailUrl(v.sourceId) : v.thumbnailUrl}
+                          alt=""
+                          className="w-28 h-16 rounded object-cover bg-[oklch(20.5%_0_0)] shrink-0"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="w-28 h-16 rounded bg-gradient-to-br from-red-600 to-red-950 shrink-0 flex flex-col items-center justify-center text-white">
+                          <Youtube className="w-7 h-7" />
+                          <span className="text-[10px] uppercase tracking-wide mt-1">{v.kind}</span>
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="text-[oklch(98.5%_0_0)] text-sm truncate" style={{ fontWeight: 500 }}>{v.title}</div>
-                        <div className="text-[oklch(55.6%_0_0)] text-xs truncate" style={{ fontWeight: 400 }}>{v.videoId}</div>
+                        <div className="text-[oklch(55.6%_0_0)] text-xs truncate" style={{ fontWeight: 400 }}>{v.sourceLabel}</div>
                       </div>
                       <button
-                        onClick={() => onRemoveVideo(v.videoId)}
+                        onClick={() => onRemoveVideo(v.id)}
                         className="shrink-0 p-2 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/30 transition-colors"
                         aria-label={`Remove ${v.title}`}
                       >
@@ -305,55 +516,29 @@ export function AdminPanel({
             </div>
           )}
 
-          {activeTab === "limits" && (
-            <div>
-              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-6" style={{ fontWeight: 500 }}>App Time Limits</h3>
-              <div className="space-y-3">
-                {apps.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex items-center justify-between p-5 bg-[oklch(26.9%_0_0)] rounded-lg hover:bg-[oklch(43.9%_0_0)]/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <app.icon className="w-8 h-8 text-[oklch(70.8%_0_0)]" />
-                      <span className="text-[oklch(98.5%_0_0)]" style={{ fontWeight: 400 }}>{app.name}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="No limit"
-                        value={getTimeLimit(app.id) || ""}
-                        onChange={(e) => onSetTimeLimit(app.id, Number(e.target.value))}
-                        className="w-24 px-3 py-2 bg-[oklch(20.5%_0_0)] text-[oklch(98.5%_0_0)] rounded-lg border border-[oklch(43.9%_0_0)] focus:border-[oklch(48.8%_0.243_264.376)] focus:outline-none text-center"
-                        style={{ fontWeight: 400 }}
-                      />
-                      <span className="text-[oklch(70.8%_0_0)] text-sm" style={{ fontWeight: 400 }}>minutes/day</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {activeTab === "power" && (
             <div>
-              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-6" style={{ fontWeight: 500 }}>Power Management</h3>
+              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-6" style={{ fontWeight: 500 }}>Screen Saver</h3>
               <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Inactivity Timeout</div>
+                    <div className="text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Start after</div>
                     <div className="text-[oklch(70.8%_0_0)] text-sm" style={{ fontWeight: 400 }}>
-                      Auto-shutdown when screen is not touched (and no video is playing)
+                      Show a dark clock after inactivity. Video playback is never interrupted.
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min="1"
                       max="60"
-                      value={inactivityTimeout}
-                      onChange={(e) => onSetInactivityTimeout(Number(e.target.value))}
+                      value={timeoutDraft}
+                      onChange={(e) => updateTimeoutDraft(e.target.value)}
+                      onBlur={commitTimeoutDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
                       className="w-24 px-3 py-2 bg-[oklch(20.5%_0_0)] text-[oklch(98.5%_0_0)] rounded-lg border border-[oklch(43.9%_0_0)] focus:border-[oklch(48.8%_0.243_264.376)] focus:outline-none text-center"
                       style={{ fontWeight: 400 }}
                     />
@@ -361,6 +546,122 @@ export function AdminPanel({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === "security" && (
+            <div>
+              <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Admin Access</h3>
+              <p className="text-[oklch(70.8%_0_0)] text-sm mb-6" style={{ fontWeight: 400 }}>
+                Reset the Admin PIN and recovery question when this device changes owners or needs a fresh setup.
+              </p>
+
+              <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-6">
+                <div className="text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Reset Admin setup</div>
+                <p className="text-[oklch(70.8%_0_0)] text-sm mb-5" style={{ fontWeight: 400 }}>
+                  This removes only the Admin PIN, recovery answer, and failed-attempt history. Apps, videos, Wi-Fi, Bluetooth, and screen-saver settings stay unchanged.
+                </p>
+
+                {!confirmReset ? (
+                  <button
+                    onClick={() => setConfirmReset(true)}
+                    className="px-5 py-3 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/30 transition-colors"
+                    style={{ fontWeight: 500 }}
+                  >
+                    Reset Admin setup…
+                  </button>
+                ) : (
+                  <div className="rounded-lg border border-[oklch(70.4%_0.191_22.216)]/40 bg-[oklch(70.4%_0.191_22.216)]/10 p-4">
+                    <p className="text-[oklch(87%_0_0)] text-sm mb-4" style={{ fontWeight: 500 }}>
+                      Are you sure? The next person entering Admin Mode will create a new PIN and recovery question.
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setConfirmReset(false)}
+                        className="px-5 py-2.5 bg-[oklch(20.5%_0_0)] text-[oklch(70.8%_0_0)] rounded-lg hover:text-[oklch(87%_0_0)] transition-colors"
+                        style={{ fontWeight: 500 }}
+                      >
+                        Keep Admin setup
+                      </button>
+                      <button
+                        onClick={onResetAdmin}
+                        className="px-5 py-2.5 bg-[oklch(63.7%_0.237_25.331)] text-white rounded-lg hover:opacity-90 transition-opacity"
+                        style={{ fontWeight: 500 }}
+                      >
+                        Reset Admin setup
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "diagnostics" && (
+            <div>
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>Persistent Bug Log</h3>
+                  <p className="text-[oklch(70.8%_0_0)] text-sm max-w-2xl" style={{ fontWeight: 400 }}>
+                    OpenPanel keeps the latest 200 startup, app-launch, foreground/background, playback, warning, and error events on this device. Credentials are redacted automatically.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={refreshDiagnostics}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[oklch(26.9%_0_0)] text-[oklch(87%_0_0)] hover:bg-[oklch(34%_0_0)]"
+                  >
+                    <RefreshCw className="size-4" /> Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { clearDiagnostics(); refreshDiagnostics(); }}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(76%_0.16_22)] hover:bg-[oklch(63.7%_0.237_25.331)]/30"
+                  >
+                    <Trash2 className="size-4" /> Clear
+                  </button>
+                </div>
+              </div>
+
+              {diagnostics.length === 0 ? (
+                <div
+                  tabIndex={0}
+                  role="status"
+                  className="rounded-lg border border-dashed border-[oklch(43.9%_0_0)] px-6 py-10 text-center text-[oklch(70.8%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80"
+                >
+                  No diagnostic events have been recorded yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {diagnostics.map((entry) => (
+                    <article
+                      key={entry.id}
+                      tabIndex={0}
+                      className="rounded-lg border border-[oklch(32%_0_0)] bg-[oklch(17%_0_0)] p-4 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80"
+                    >
+                      <div className="flex items-center justify-between gap-4 mb-2">
+                        <span className={`text-xs uppercase tracking-wide ${
+                          entry.level === "error"
+                            ? "text-[oklch(76%_0.16_22)]"
+                            : entry.level === "warning"
+                              ? "text-[oklch(82%_0.14_80)]"
+                              : "text-[oklch(72%_0.12_240)]"
+                        }`} style={{ fontWeight: 650 }}>
+                          {entry.level}
+                        </span>
+                        <time className="text-[oklch(55.6%_0_0)] text-xs">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </time>
+                      </div>
+                      <p className="text-[oklch(92%_0_0)] text-sm break-words" style={{ fontWeight: 500 }}>{entry.message}</p>
+                      {entry.details && (
+                        <pre className="mt-2 text-[oklch(64%_0_0)] text-xs whitespace-pre-wrap break-words font-mono">{entry.details}</pre>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -403,7 +704,7 @@ export function AdminPanel({
                 {[
                   { label: "Set OpenPanel as Home launcher", ok: !!kioskStatus?.defaultLauncher, action: onSetDefaultLauncher, actionLabel: "Choose", hint: undefined as string | undefined },
                   { label: "Enable OpenPanel device admin", ok: !!kioskStatus?.deviceAdmin, action: onRequestDeviceAdmin, actionLabel: "Enable", hint: undefined as string | undefined },
-                  { label: "Device Owner (silent full lockdown)", ok: !!kioskStatus?.deviceOwner, action: undefined, actionLabel: undefined, hint: "Provisioned via ADB/QR before setup — can't be enabled from inside the app" },
+                  { label: "Device Owner (silent full lockdown)", ok: !!kioskStatus?.deviceOwner, action: undefined, actionLabel: undefined, hint: "Set by ArborXR, by adb, or by the provisioning QR below — an installed app can't promote itself" },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between p-4 bg-[oklch(26.9%_0_0)] rounded-lg">
                     <div className="flex items-center gap-3 min-w-0">
@@ -428,6 +729,14 @@ export function AdminPanel({
                 ))}
               </div>
 
+              {/* Permissions & special app access (Fully-style). Auto-granted where
+                  the device owner can; the rest deep-link the Settings screen.
+                  Also hosts the on-device provisioning QR when not yet owner. */}
+              <div className="mb-6">
+                <div className="text-[oklch(98.5%_0_0)] mb-3" style={{ fontWeight: 500 }}>Permissions &amp; device access</div>
+                <PermissionsManager />
+              </div>
+
               {/* Lock / unlock */}
               {kioskStatus?.lockTaskActive ? (
                 <button
@@ -444,6 +753,16 @@ export function AdminPanel({
                   style={{ fontWeight: 500 }}
                 >
                   <Lock className="w-5 h-5" /> Lock device into kiosk
+                </button>
+              )}
+
+              {kioskStatus?.deviceOwner && (
+                <button
+                  onClick={onClearDeviceOwner}
+                  className="w-full mt-3 flex items-center justify-center gap-3 py-3 bg-[oklch(63.7%_0.237_25.331)]/15 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/25 transition-colors text-sm"
+                  style={{ fontWeight: 500 }}
+                >
+                  <AlertTriangle className="w-4 h-4" /> Remove Device Owner (unmanage device)
                 </button>
               )}
 

@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
-import { Play } from "lucide-react";
+import { ListVideo, Play } from "lucide-react";
+import type { Ref } from "react";
 import type { ContentItem } from "../App";
 
 interface ContentTileProps {
@@ -7,6 +8,8 @@ interface ContentTileProps {
   isSelected: boolean;
   onSelect: () => void;
   onLaunch: () => void;
+  onNavigate?: (direction: "left" | "right") => void;
+  buttonRef?: Ref<HTMLButtonElement>;
 }
 
 const BADGE_STYLES = {
@@ -18,19 +21,32 @@ const BADGE_STYLES = {
 // First tap selects the tile — it pops (scale + play chip) and the hero
 // switches to it. Tapping the already-selected tile launches. Same
 // focus-then-open flow as a TV launcher.
-export function ContentTile({ item, isSelected, onSelect, onLaunch }: ContentTileProps) {
+export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, buttonRef }: ContentTileProps) {
   const isLandscape = item.tileType === "landscape";
 
   return (
-    <motion.div
-      className={`relative flex-shrink-0 cursor-pointer group ${
+    <motion.button
+      ref={buttonRef}
+      type="button"
+      data-content-tile
+      data-content-id={item.id}
+      aria-label={`${isSelected ? "Open" : "Select"} ${item.title}`}
+      aria-pressed={isSelected}
+      className={`relative flex-shrink-0 cursor-pointer group text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 rounded-lg ${
         isLandscape ? "w-72 h-44" : "w-56 h-80"
       } ${isSelected ? "z-20" : ""}`}
       animate={{ scale: isSelected ? 1.07 : 1 }}
       whileHover={{ scale: 1.07, zIndex: 20 }}
       whileTap={{ scale: 0.97 }}
       transition={{ type: "spring", stiffness: 350, damping: 28 }}
+      onFocus={onSelect}
       onClick={() => (isSelected ? onLaunch() : onSelect())}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          onNavigate?.(event.key === "ArrowLeft" ? "left" : "right");
+        }
+      }}
     >
       <div className="relative w-full h-full rounded-lg overflow-hidden">
         {/* Poster background */}
@@ -73,7 +89,9 @@ export function ContentTile({ item, isSelected, onSelect, onLaunch }: ContentTil
           }`}
         >
           <div className="w-11 h-11 rounded-full bg-white/95 flex items-center justify-center shadow-xl">
-            <Play className="w-5 h-5 text-black ml-0.5" fill="currentColor" />
+            {item.youtubeItem?.kind === "channel"
+              ? <ListVideo className="w-5 h-5 text-black" />
+              : <Play className="w-5 h-5 text-black ml-0.5" fill="currentColor" />}
           </div>
         </div>
 
@@ -111,6 +129,6 @@ export function ContentTile({ item, isSelected, onSelect, onLaunch }: ContentTil
           }`}
         />
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
