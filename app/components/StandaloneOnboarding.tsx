@@ -23,18 +23,22 @@ import { setupAdmin, SECURITY_QUESTIONS } from "../native/adminAuth";
 import { isAllowedApp } from "../native/catalog";
 import { addYouTubeItem } from "../native/youtube";
 import { PinInput } from "./PinInput";
+import { DeviceHealthPanel } from "./DeviceHealthPanel";
 
 interface StandaloneOnboardingProps {
   deviceProfile: DeviceProfile | null;
+  manageNotifications: boolean;
+  onSetManageNotifications: (enabled: boolean) => void;
   // Receives the packages the operator chose NOT to show, to seed hidden-apps.
   onComplete: (hiddenPackages: string[]) => void;
 }
 
-type StepId = "pin" | "permissions" | "apps" | "optional";
-const STEPS: StepId[] = ["pin", "permissions", "apps", "optional"];
+type StepId = "pin" | "permissions" | "health" | "apps" | "optional";
+const STEPS: StepId[] = ["pin", "permissions", "health", "apps", "optional"];
 const STEP_TITLES: Record<StepId, string> = {
   pin: "Create an admin PIN",
   permissions: "Grant permissions",
+  health: "Optimize this device",
   apps: "Choose apps",
   optional: "Wi-Fi & YouTube",
 };
@@ -301,7 +305,33 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-// -------------------- Step 3: app selection --------------------
+// -------------------- Step 3: device health --------------------
+
+function DeviceHealthStep({
+  manageNotifications,
+  onSetManageNotifications,
+  onNext,
+}: {
+  manageNotifications: boolean;
+  onSetManageNotifications: (enabled: boolean) => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className={`${cardClass} p-5 sm:p-7 w-full`}>
+      <DeviceHealthPanel
+        manageNotifications={manageNotifications}
+        onSetManageNotifications={onSetManageNotifications}
+        autoApply
+        setupMode
+      />
+      <button type="button" onClick={onNext} className={`${primaryBtn} w-full mt-7`}>
+        Continue <ArrowRight className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+// -------------------- Step 4: app selection --------------------
 
 function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
   const [apps, setApps] = useState<InstalledApp[] | null>(null);
@@ -399,7 +429,7 @@ function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
   );
 }
 
-// -------------------- Step 4: optional Wi-Fi + YouTube --------------------
+// -------------------- Step 5: optional Wi-Fi + YouTube --------------------
 
 function OptionalStep({ onFinish }: { onFinish: () => void }) {
   const [channel, setChannel] = useState("");
@@ -483,7 +513,11 @@ function OptionalStep({ onFinish }: { onFinish: () => void }) {
 
 // -------------------- Wizard shell --------------------
 
-export function StandaloneOnboarding({ onComplete }: StandaloneOnboardingProps) {
+export function StandaloneOnboarding({
+  manageNotifications,
+  onSetManageNotifications,
+  onComplete,
+}: StandaloneOnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [hiddenPackages, setHiddenPackages] = useState<string[]>([]);
   const step = STEPS[stepIndex];
@@ -524,6 +558,13 @@ export function StandaloneOnboarding({ onComplete }: StandaloneOnboardingProps) 
         <motion.div key={step} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {step === "pin" && <PinStep onDone={goNext} />}
           {step === "permissions" && <PermissionsStep onNext={goNext} />}
+          {step === "health" && (
+            <DeviceHealthStep
+              manageNotifications={manageNotifications}
+              onSetManageNotifications={onSetManageNotifications}
+              onNext={goNext}
+            />
+          )}
           {step === "apps" && <AppsStep onNext={handleAppsNext} />}
           {step === "optional" && <OptionalStep onFinish={() => onComplete(hiddenPackages)} />}
         </motion.div>

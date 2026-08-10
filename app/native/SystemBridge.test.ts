@@ -15,6 +15,35 @@ describe("SystemBridge web fallback", () => {
     await expect(SystemBridge.setKeepScreenOn({ enabled: false })).resolves.toBeUndefined();
   });
 
+  it("detects device health and reversibly manages reviewed optional apps", async () => {
+    await expect(SystemBridge.getDeviceHealth()).resolves.toMatchObject({
+      manufacturer: "Lenovo",
+      model: "Tab M10 Plus",
+      profile: "lenovo",
+      ramUsedPercent: 50,
+      canManageApps: true,
+      manageNotifications: true,
+    });
+
+    const detected = await SystemBridge.getDebloatApps();
+    expect(detected.apps.map((app) => app.packageName)).toEqual(expect.arrayContaining([
+      "com.google.android.youtube",
+      "com.google.android.keep",
+      "com.lenovo.hec.lenovoextend",
+    ]));
+
+    const optimized = await SystemBridge.applyRecommendedDebloat({ manageNotifications: true });
+    expect(optimized.available).toBe(true);
+    expect(optimized.apps?.every((app) => app.hidden)).toBe(true);
+
+    const restored = await SystemBridge.restoreDebloatApps();
+    expect(restored.restored).toBeGreaterThan(0);
+    expect(restored.apps?.every((app) => !app.hidden)).toBe(true);
+
+    await expect(SystemBridge.setNotificationManagement({ enabled: false }))
+      .resolves.toMatchObject({ available: true, enabled: false });
+  });
+
   it("exposes Google TV input capabilities and API-key-free channel resolution", async () => {
     await expect(SystemBridge.getDeviceProfile()).resolves.toMatchObject({
       deviceType: "television",
