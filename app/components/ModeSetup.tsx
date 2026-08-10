@@ -11,7 +11,10 @@ interface ModeSetupProps {
 // device itself). Shown once, then persisted.
 export function ModeSetup({ onChoose }: ModeSetupProps) {
   return (
-    <div className="fixed inset-0 bg-[oklch(11%_0_0)] z-[300] flex items-center justify-center p-8">
+    <div
+      data-dpad-scope
+      className="fixed inset-0 bg-[oklch(11%_0_0)] z-[300] flex items-center justify-center p-8"
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -26,6 +29,7 @@ export function ModeSetup({ onChoose }: ModeSetupProps) {
 
         <div className="grid grid-cols-2 gap-5">
           <button
+            autoFocus
             onClick={() => onChoose("companion")}
             className="text-left p-7 bg-[oklch(20.5%_0_0)] rounded-2xl border border-[oklch(26.9%_0_0)] hover:border-[oklch(48.8%_0.243_264.376)] transition-colors"
           >

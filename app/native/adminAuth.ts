@@ -158,6 +158,15 @@ export function isAdminConfigured(): boolean {
   return read() !== null;
 }
 
+/**
+ * Remove the local Admin credential and its lockout state. This intentionally
+ * leaves app visibility, videos, and device settings untouched.
+ */
+export function clearAdminConfiguration(): void {
+  localStorage.removeItem(KEY);
+  localStorage.removeItem(THROTTLE_KEY);
+}
+
 export function getSecurityQuestion(): string | null {
   return read()?.question ?? null;
 }

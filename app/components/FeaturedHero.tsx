@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Play, Star } from "lucide-react";
+import { ListVideo, Play, Star } from "lucide-react";
 import type { ContentItem } from "../App";
 
 interface FeaturedHeroProps {
@@ -139,8 +139,10 @@ export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
                 className="flex items-center gap-2.5 px-7 py-3.5 bg-[oklch(98%_0_0)] text-[oklch(11%_0_0)] rounded-md transition-colors hover:bg-[oklch(90%_0_0)]"
                 style={{ fontWeight: 600, fontSize: "0.9375rem" }}
               >
-                <Play className="w-5 h-5" fill="currentColor" />
-                {item.isVideo ? "Play" : "Open"}
+                {item.youtubeItem?.kind === "channel"
+                  ? <ListVideo className="w-5 h-5" />
+                  : <Play className="w-5 h-5" fill="currentColor" />}
+                {item.youtubeItem?.kind === "channel" ? "Explore" : item.youtubeItem ? "Play" : "Open"}
               </motion.button>
             </motion.div>
           </div>

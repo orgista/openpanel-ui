@@ -6,7 +6,7 @@ git submodule; see the engine repo's `docs/open-source-split.md`), then from the
 engine root:
 
 ```sh
-npm ci && npm run build && npx cap sync android
+npm ci && npm test && npm run typecheck && npm run build && npx cap sync android
 ```
 
 **Proprietary — all rights reserved.** The engine is MIT; this UI is not open source.
