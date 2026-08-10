@@ -25,6 +25,7 @@ describe("admin settings", () => {
         hiddenAppIds: ["com.example.game"],
         inactivityTimeoutMinutes: 12,
         allowSameChannelRecommendations: false,
+        manageNotifications: false,
       },
       storage,
     );
@@ -33,6 +34,7 @@ describe("admin settings", () => {
       hiddenAppIds: ["com.example.game"],
       inactivityTimeoutMinutes: 12,
       allowSameChannelRecommendations: false,
+      manageNotifications: false,
     });
   });
 
@@ -47,6 +49,7 @@ describe("admin settings", () => {
       hiddenAppIds: ["ok"],
       inactivityTimeoutMinutes: 60,
       allowSameChannelRecommendations: true,
+      manageNotifications: true,
     });
   });
 
@@ -55,6 +58,7 @@ describe("admin settings", () => {
       hiddenAppIds: [],
       inactivityTimeoutMinutes: DEFAULT_INACTIVITY_TIMEOUT_MINUTES,
       allowSameChannelRecommendations: true,
+      manageNotifications: true,
     });
   });
 });

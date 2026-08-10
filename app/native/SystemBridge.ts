@@ -113,6 +113,63 @@ export interface DeviceProfile {
   controllerName: string | null;
 }
 
+export interface DeviceHealthSnapshot {
+  manufacturer: string;
+  brand: string;
+  model: string;
+  device: string;
+  product: string;
+  androidVersion: string;
+  sdk: number;
+  profile: string;
+  ramTotalBytes: number;
+  ramAvailableBytes: number;
+  ramUsedBytes: number;
+  ramUsedPercent: number;
+  storageTotalBytes: number;
+  storageAvailableBytes: number;
+  storageUsedBytes: number;
+  storageUsedPercent: number;
+  deviceOwner: boolean;
+  arborXrManaged: boolean;
+  canManageApps: boolean;
+  canManageNotifications: boolean;
+  manageNotifications: boolean;
+  installedBloatCount: number;
+  activeBloatCount: number;
+  hiddenBloatCount: number;
+  notificationManagedCount: number;
+}
+
+export interface DebloatApp {
+  packageName: string;
+  label: string;
+  installedLabel: string;
+  category: string;
+  reason: string;
+  profile: string;
+  isSystem: boolean;
+  enabled: boolean;
+  hidden: boolean;
+  managedByOpenPanel: boolean;
+  canUninstall: boolean;
+  status: "active" | "hidden" | "disabled-externally";
+}
+
+export interface DeviceHealthActionResult {
+  available: boolean;
+  deviceOwner: boolean;
+  arborXrManaged: boolean;
+  message: string;
+  changed?: number;
+  restored?: number;
+  remaining?: number;
+  apps?: DebloatApp[];
+  app?: DebloatApp | null;
+  notifications?: DeviceHealthActionResult;
+  enabled?: boolean;
+}
+
 interface SystemBridgePlugin {
   writeDiagnostic(opts: { level: "info" | "warning" | "error"; message: string }): Promise<void>;
   hideKeyboard(): Promise<void>;
@@ -129,6 +186,17 @@ interface SystemBridgePlugin {
     catalogSource: "channel-page" | "recent-feed";
   }>;
   getInstalledApps(): Promise<{ apps: InstalledApp[] }>;
+  getDeviceHealth(): Promise<DeviceHealthSnapshot>;
+  getDebloatApps(): Promise<{ profile: string; apps: DebloatApp[] }>;
+  applyRecommendedDebloat(opts: { manageNotifications: boolean }): Promise<DeviceHealthActionResult>;
+  setDebloatPackageState(opts: { packageName: string; hidden: boolean }): Promise<DeviceHealthActionResult>;
+  restoreDebloatApps(): Promise<DeviceHealthActionResult>;
+  setNotificationManagement(opts: { enabled: boolean }): Promise<DeviceHealthActionResult>;
+  requestUninstallPackage(opts: { packageName: string }): Promise<{
+    packageName: string;
+    uninstalled: boolean;
+    resultCode: number;
+  }>;
   launchApp(opts: { packageName: string }): Promise<void>;
   getBatteryInfo(): Promise<BatteryInfo>;
   getWifiStatus(): Promise<WifiStatus>;
@@ -254,6 +322,93 @@ const webHomeschoolPopVideos: YouTubeChannelVideoResult[] = [
   })),
 ];
 
+let webManageNotifications = true;
+let webDebloatApps: DebloatApp[] = [
+  {
+    packageName: "com.google.android.youtube",
+    label: "YouTube",
+    installedLabel: "YouTube",
+    category: "media",
+    reason: "OpenPanel provides its own restricted YouTube player",
+    profile: "generic",
+    isSystem: true,
+    enabled: true,
+    hidden: false,
+    managedByOpenPanel: false,
+    canUninstall: false,
+    status: "active",
+  },
+  {
+    packageName: "com.lenovo.hec.lenovoextend",
+    label: "Lenovo FreeStyle",
+    installedLabel: "Lenovo FreeStyle",
+    category: "oem",
+    reason: "Optional cross-device companion",
+    profile: "lenovo",
+    isSystem: true,
+    enabled: true,
+    hidden: false,
+    managedByOpenPanel: false,
+    canUninstall: false,
+    status: "active",
+  },
+  {
+    packageName: "com.google.android.keep",
+    label: "Google Keep",
+    installedLabel: "Keep Notes",
+    category: "productivity",
+    reason: "Optional personal notes app",
+    profile: "generic",
+    isSystem: false,
+    enabled: true,
+    hidden: false,
+    managedByOpenPanel: false,
+    canUninstall: true,
+    status: "active",
+  },
+];
+
+const webHealthSnapshot = (): DeviceHealthSnapshot => {
+  const hidden = webDebloatApps.filter((app) => app.hidden).length;
+  const active = webDebloatApps.filter((app) => app.status === "active").length;
+  return {
+    manufacturer: "Lenovo",
+    brand: "Lenovo",
+    model: "Tab M10 Plus",
+    device: "TB132FU",
+    product: "TB132FU",
+    androidVersion: "14",
+    sdk: 34,
+    profile: "lenovo",
+    ramTotalBytes: 6_442_450_944,
+    ramAvailableBytes: 3_221_225_472,
+    ramUsedBytes: 3_221_225_472,
+    ramUsedPercent: 50,
+    storageTotalBytes: 128_000_000_000,
+    storageAvailableBytes: 82_000_000_000,
+    storageUsedBytes: 46_000_000_000,
+    storageUsedPercent: 36,
+    deviceOwner: true,
+    arborXrManaged: false,
+    canManageApps: true,
+    canManageNotifications: true,
+    manageNotifications: webManageNotifications,
+    installedBloatCount: webDebloatApps.length,
+    activeBloatCount: active,
+    hiddenBloatCount: hidden,
+    notificationManagedCount: webManageNotifications ? 12 : 0,
+  };
+};
+
+const webActionResult = (message: string, changed = 0): DeviceHealthActionResult => ({
+  available: true,
+  deviceOwner: true,
+  arborXrManaged: false,
+  message,
+  changed,
+  apps: webDebloatApps,
+});
+
 // Browser fallback so the UI stays usable during web development.
 const webMock: SystemBridgePlugin = {
   async writeDiagnostic() {},
@@ -336,6 +491,58 @@ const webMock: SystemBridgePlugin = {
         { packageName: "com.example.two", label: "Another Game", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
       ],
     };
+  },
+  async getDeviceHealth() {
+    return webHealthSnapshot();
+  },
+  async getDebloatApps() {
+    return { profile: "lenovo", apps: webDebloatApps };
+  },
+  async applyRecommendedDebloat({ manageNotifications }) {
+    webManageNotifications = manageNotifications;
+    let changed = 0;
+    webDebloatApps = webDebloatApps.map((app) => {
+      if (app.hidden || app.status === "disabled-externally") return app;
+      changed++;
+      return { ...app, hidden: true, managedByOpenPanel: true, status: "hidden" as const };
+    });
+    return webActionResult("Recommended apps were hidden reversibly.", changed);
+  },
+  async setDebloatPackageState({ packageName, hidden }) {
+    let changed = 0;
+    webDebloatApps = webDebloatApps.map((app) => {
+      if (app.packageName !== packageName || app.status === "disabled-externally") return app;
+      changed++;
+      return {
+        ...app,
+        hidden,
+        managedByOpenPanel: hidden,
+        status: hidden ? "hidden" as const : "active" as const,
+      };
+    });
+    return webActionResult(hidden ? "App hidden." : "App restored.", changed);
+  },
+  async restoreDebloatApps() {
+    let restored = 0;
+    webDebloatApps = webDebloatApps.map((app) => {
+      if (!app.managedByOpenPanel) return app;
+      restored++;
+      return { ...app, hidden: false, managedByOpenPanel: false, status: "active" as const };
+    });
+    return { ...webActionResult("Apps hidden by OpenPanel were restored.", restored), restored };
+  },
+  async setNotificationManagement({ enabled }) {
+    webManageNotifications = enabled;
+    return {
+      ...webActionResult(enabled
+        ? "Notifications were disabled for eligible apps."
+        : "Notification grants changed by OpenPanel were restored."),
+      enabled,
+    };
+  },
+  async requestUninstallPackage({ packageName }) {
+    webDebloatApps = webDebloatApps.filter((app) => app.packageName !== packageName);
+    return { packageName, uninstalled: true, resultCode: -1 };
   },
   async launchApp() {},
   async getBatteryInfo() {

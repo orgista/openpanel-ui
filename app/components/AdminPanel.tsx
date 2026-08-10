@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw } from "lucide-react";
+import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw, HeartPulse } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type KioskYouTubeItem, thumbnailUrl } from "../native/youtube";
@@ -9,6 +9,7 @@ import { YouTubeSearchPanel } from "./YouTubeSearchPanel";
 import { PermissionsManager } from "./PermissionsManager";
 import { dismissSoftKeyboard } from "../native/keyboard";
 import { clearDiagnostics, getDiagnostics, type DiagnosticEntry } from "../native/diagnostics";
+import { DeviceHealthPanel } from "./DeviceHealthPanel";
 
 interface App {
   id: string;
@@ -28,6 +29,8 @@ interface AdminPanelProps {
   onSetInactivityTimeout: (minutes: number) => void;
   allowSameChannelRecommendations: boolean;
   onSetAllowSameChannelRecommendations: (allowed: boolean) => void;
+  manageNotifications?: boolean;
+  onSetManageNotifications?: (enabled: boolean) => void;
   // Locked YouTube videos, channels, and playlists.
   videos: KioskYouTubeItem[];
   onAddVideo: (url: string, title: string, thumbnailUrl?: string | null) => boolean; // false if source is invalid
@@ -45,10 +48,10 @@ interface AdminPanelProps {
   onUnlockKiosk: () => void;
   onClearDeviceOwner: () => void;
   onResetAdmin: () => void;
-  initialTab?: "apps" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+  initialTab?: "apps" | "health" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
 }
 
-type AdminTab = "apps" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+type AdminTab = "apps" | "health" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
 
 const adminBodyFocusableSelector = [
   "button:not([disabled])",
@@ -74,6 +77,8 @@ export function AdminPanel({
   onSetInactivityTimeout,
   allowSameChannelRecommendations,
   onSetAllowSameChannelRecommendations,
+  manageNotifications = true,
+  onSetManageNotifications = () => {},
   videos,
   onAddVideo,
   onRemoveVideo,
@@ -103,8 +108,8 @@ export function AdminPanel({
   const bodyRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<typeof activeTab, HTMLButtonElement | null>>>({});
   const tabOrder: AdminTab[] = standalone
-    ? ["apps", "youtube", "power", "kiosk", "diagnostics", "security"]
-    : ["apps", "youtube", "power", "diagnostics", "security"];
+    ? ["apps", "health", "youtube", "power", "kiosk", "diagnostics", "security"]
+    : ["apps", "health", "youtube", "power", "diagnostics", "security"];
 
   const refreshDiagnostics = () => setDiagnostics(getDiagnostics().slice().reverse());
 
@@ -235,6 +240,20 @@ export function AdminPanel({
             style={{ fontWeight: 500 }}
           >
             Applications
+          </button>
+          <button
+            ref={(element) => { tabRefs.current.health = element; }}
+            onClick={() => setActiveTab("health")}
+            onKeyDown={(event) => handleTabKeyDown("health", event)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              activeTab === "health"
+                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
+                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
+            }`}
+            style={{ fontWeight: 500 }}
+          >
+            <HeartPulse className="w-4 h-4" />
+            Device Health
           </button>
           <button
             ref={(element) => { tabRefs.current.youtube = element; }}
@@ -388,6 +407,13 @@ export function AdminPanel({
                 </div>
               </div>
             </>
+          )}
+
+          {activeTab === "health" && (
+            <DeviceHealthPanel
+              manageNotifications={manageNotifications}
+              onSetManageNotifications={onSetManageNotifications}
+            />
           )}
 
           {activeTab === "youtube" && (

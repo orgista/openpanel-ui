@@ -144,6 +144,9 @@ export default function App() {
   const [allowSameChannelRecommendations, setAllowSameChannelRecommendations] = useState(
     initialAdminSettings.allowSameChannelRecommendations,
   );
+  const [manageNotifications, setManageNotifications] = useState(
+    initialAdminSettings.manageNotifications,
+  );
   const lastActivityRef = useRef(Date.now());
   const launchingRef = useRef(false);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -181,6 +184,10 @@ export default function App() {
   // default and stays fully manageable from the Admin Panel's Applications tab.
   const finishOnboarding = useCallback((hiddenPackages: string[]) => {
     setHiddenApps(new Set(hiddenPackages));
+    // Optional setup can add approved YouTube channels after this component's
+    // initial state was created. Refresh immediately so the new tile appears
+    // on the launcher without requiring an app restart.
+    setYouTubeItems(getYouTubeItems());
     setStandaloneOnboarded(true);
     setNeedsOnboarding(false);
   }, []);
@@ -190,6 +197,16 @@ export default function App() {
       console.error("Failed to sync management mode", e);
     });
   }, [appMode]);
+
+  useEffect(() => {
+    SystemBridge.setNotificationManagement({ enabled: manageNotifications })
+      .then((result) => recordDiagnostic("info", "Notification policy synced", {
+        enabled: manageNotifications,
+        available: result.available,
+        changed: result.changed ?? 0,
+      }))
+      .catch((error) => console.error("Failed to sync notification policy", error));
+  }, [manageNotifications]);
 
   useEffect(() => {
     SystemBridge.getDeviceProfile()
@@ -471,8 +488,9 @@ export default function App() {
       hiddenAppIds: Array.from(hiddenApps),
       inactivityTimeoutMinutes: inactivityTimeout,
       allowSameChannelRecommendations,
+      manageNotifications,
     });
-  }, [allowSameChannelRecommendations, hiddenApps, inactivityTimeout]);
+  }, [allowSameChannelRecommendations, hiddenApps, inactivityTimeout, manageNotifications]);
 
   const updateHiddenApps = useCallback((update: (current: Set<string>) => Set<string>) => {
     setHiddenApps((current) => update(current));
@@ -598,6 +616,8 @@ export default function App() {
         onSetInactivityTimeout={updateInactivityTimeout}
         allowSameChannelRecommendations={allowSameChannelRecommendations}
         onSetAllowSameChannelRecommendations={setAllowSameChannelRecommendations}
+        manageNotifications={manageNotifications}
+        onSetManageNotifications={setManageNotifications}
         videos={youtubeItems}
         onAddVideo={(url, title, artworkUrl) => {
           const item = addYouTubeItem(url, title, artworkUrl);
@@ -669,7 +689,12 @@ export default function App() {
       {needsModeSetup && <ModeSetup onChoose={chooseAppMode} />}
 
       {needsOnboarding && (
-        <StandaloneOnboarding deviceProfile={deviceProfile} onComplete={finishOnboarding} />
+        <StandaloneOnboarding
+          deviceProfile={deviceProfile}
+          manageNotifications={manageNotifications}
+          onSetManageNotifications={setManageNotifications}
+          onComplete={finishOnboarding}
+        />
       )}
 
       <style>{`

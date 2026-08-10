@@ -6,6 +6,7 @@ export interface AdminSettings {
   hiddenAppIds: string[];
   inactivityTimeoutMinutes: number;
   allowSameChannelRecommendations: boolean;
+  manageNotifications: boolean;
 }
 
 interface StorageLike {
@@ -40,6 +41,8 @@ const normalize = (value: Partial<AdminSettings> | null | undefined): AdminSetti
     typeof value?.allowSameChannelRecommendations === "boolean"
       ? value.allowSameChannelRecommendations
       : true,
+  manageNotifications:
+    typeof value?.manageNotifications === "boolean" ? value.manageNotifications : true,
 });
 
 export function loadAdminSettings(storage: StorageLike | null = defaultStorage()): AdminSettings {

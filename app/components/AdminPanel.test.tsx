@@ -86,6 +86,43 @@ describe("AdminPanel", () => {
     expect(html).toContain("data-dpad-content");
   });
 
+  it("keeps Device Health and its notification policy reachable from admin", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        manageNotifications
+        onSetManageNotifications={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="health"
+      />,
+    );
+
+    expect(html).toContain("Device Health");
+    expect(html).toContain("Detecting this device");
+  });
+
   it("explains that videos, channels, and playlists are supported", () => {
     const html = renderToStaticMarkup(
       <AdminPanel
