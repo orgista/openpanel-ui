@@ -1,6 +1,7 @@
 import { Wifi, WifiOff, Bluetooth, Settings, BatteryLow } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from "react";
+import { OpenPanelBrand } from "./OpenPanelBrand";
 
 interface StatusBarProps {
   onSettingsClick: () => void;
@@ -107,14 +108,7 @@ export function StatusBar({ onSettingsClick, onWifiClick, onBluetoothClick, isWi
         style={{ background: "linear-gradient(to bottom, oklch(11% 0 0) 60%, transparent)" }}
       >
         {/* Brand */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-[oklch(97%_0_0)] tracking-tight" style={{ fontWeight: 700, fontSize: "1.375rem" }}>
-            OpenPanel
-          </span>
-          <span className="text-[oklch(38%_0_0)] tracking-widest uppercase" style={{ fontSize: "0.6rem", fontWeight: 500 }}>
-            by Orgista™
-          </span>
-        </div>
+        <OpenPanelBrand />
 
         {/* Right cluster */}
         <div className="flex items-center gap-5">

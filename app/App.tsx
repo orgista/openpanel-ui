@@ -31,12 +31,14 @@ import {
 } from "./appConfig";
 import { SystemBridge, type DeviceProfile, type InstalledApp, type KioskStatus } from "./native/SystemBridge";
 import type { YouTubeChannelVideoResult } from "./native/SystemBridge";
-import { isAllowedApp } from "./native/catalog";
+import { allowedAppsForDevice } from "./native/catalog";
 import { loadAdminSettings, normalizeInactivityTimeoutMinutes, saveAdminSettings } from "./native/adminSettings";
 import { clearAdminConfiguration } from "./native/adminAuth";
 import { installKeyboardViewportTracking } from "./native/keyboard";
 import { installDpadNavigation } from "./native/dpadNavigation";
 import { recordDiagnostic } from "./native/diagnostics";
+import { LibraryBridge, type LibraryPublication } from "./native/LibraryBridge";
+import { LibraryCatalogBrowser } from "./components/LibraryCatalogBrowser";
 
 export interface ContentItem {
   id: string;
@@ -49,6 +51,8 @@ export interface ContentItem {
   category: string;
   packageName?: string;
   youtubeItem?: KioskYouTubeItem;
+  libraryPublication?: LibraryPublication;
+  libraryAction?: "browse";
   duration?: string;
   year?: number;
   rating?: string;
@@ -108,6 +112,32 @@ function toYouTubeContentItem(item: KioskYouTubeItem): ContentItem {
   };
 }
 
+function toLibraryContentItem(publication: LibraryPublication): ContentItem {
+  const audio = publication.format === "audiobook" || publication.format === "audio";
+  return {
+    id: `library:${publication.id}`,
+    title: publication.title,
+    libraryPublication: publication,
+    imageUrl: publication.coverUrl ?? undefined,
+    coverUrl: audio ? "#7c3aed, #2e1065" : "#2563eb, #172554",
+    description: `${publication.authors.join(", ") || "Unknown author"}${publication.progression ? ` · ${Math.round(publication.progression * 100)}% complete` : ""}`,
+    genre: audio ? "Audiobook" : publication.format.toUpperCase(),
+    category: "library",
+    tileType: "portrait",
+  };
+}
+
+const browseLibraryItem: ContentItem = {
+  id: "library:browse",
+  title: "Browse Library",
+  libraryAction: "browse",
+  coverUrl: "#0f766e, #042f2e",
+  description: "Explore approved OPDS catalogs and save books or audiobooks for offline use.",
+  genre: "Library Catalogs",
+  category: "library",
+  tileType: "portrait",
+};
+
 function restoreElementFocus(element: HTMLElement | null): void {
   window.setTimeout(() => {
     if (!element?.isConnected) return;
@@ -161,6 +191,8 @@ export default function App() {
   const [youtubeItems, setYouTubeItems] = useState<KioskYouTubeItem[]>(initializeApprovedYouTubeItems());
   const [browsingYouTubeChannel, setBrowsingYouTubeChannel] = useState<KioskYouTubeItem | null>(null);
   const [playingYouTube, setPlayingYouTube] = useState<KioskYouTubeItem | null>(null);
+  const [libraryPublications, setLibraryPublications] = useState<LibraryPublication[]>([]);
+  const [isLibraryBrowserOpen, setIsLibraryBrowserOpen] = useState(false);
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | null>(null);
   const isStandalone = appMode === "standalone";
@@ -172,12 +204,16 @@ export default function App() {
   );
 
   const chooseAppMode = useCallback((mode: AppMode) => {
+    if (mode === appMode) {
+      setNeedsModeSetup(false);
+      return;
+    }
     persistAppMode(mode);
     setAppMode(mode);
     setNeedsModeSetup(false);
     // Fresh standalone setups run the onboarding wizard before the panel.
     if (mode === "standalone" && !isStandaloneOnboarded()) setNeedsOnboarding(true);
-  }, []);
+  }, [appMode]);
 
   // Onboarding's app picker reports the apps the operator left unchecked; hide
   // exactly those. Everything else (including apps installed later) shows by
@@ -188,6 +224,9 @@ export default function App() {
     // initial state was created. Refresh immediately so the new tile appears
     // on the launcher without requiring an app restart.
     setYouTubeItems(getYouTubeItems());
+    void LibraryBridge.listPublications()
+      .then(({ publications }) => setLibraryPublications(publications))
+      .catch((error) => console.error("Failed to refresh onboarding library", error));
     setStandaloneOnboarded(true);
     setNeedsOnboarding(false);
   }, []);
@@ -224,6 +263,21 @@ export default function App() {
   const youtubeContentItems = [...youtubeItems]
     .sort((a, b) => b.addedAt - a.addedAt)
     .map(toYouTubeContentItem);
+  const libraryContentItems = [
+    browseLibraryItem,
+    ...[...libraryPublications]
+      .sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
+      .map(toLibraryContentItem),
+  ];
+
+  const loadLibrary = useCallback(async () => {
+    try {
+      const { publications } = await LibraryBridge.listPublications();
+      setLibraryPublications(publications);
+    } catch (error) {
+      console.error("Failed to load books and audio", error);
+    }
+  }, []);
 
   useEffect(() => {
     const staleChannels = youtubeItems.filter(channelMetadataNeedsRefresh);
@@ -269,15 +323,32 @@ export default function App() {
 
   const loadApps = useCallback(async () => {
     try {
-      const { apps: installed } = await SystemBridge.getInstalledApps();
-      const allowed = installed
-        .filter((app) => isAllowedApp(app, appMode))
+      const [{ apps: installed }, management] = await Promise.all([
+        SystemBridge.getInstalledApps(),
+        appMode === "companion"
+          ? SystemBridge.getKioskStatus().catch((error) => {
+              console.warn("Could not verify ArborXR management while loading apps", error);
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+      if (management) setKioskStatus(management);
+      const allowed = allowedAppsForDevice(
+        installed,
+        appMode,
+        // Treat an unreadable management state as managed. The fallback must
+        // only activate after Android positively reports that ArborXR is not
+        // the Device Owner.
+        management?.arborXrManaged ?? true,
+      )
         .map(toContentItem);
       allowed.sort((a, b) => a.title.localeCompare(b.title));
       setApps(allowed);
       // Keep the current selection across refreshes (YouTube sources aren't in the
       // installed-apps list, so they'd otherwise be deselected every poll).
-      setFeaturedItem(prev => prev && (prev.youtubeItem || allowed.some(a => a.id === prev.id)) ? prev : allowed[0] ?? null);
+      setFeaturedItem(prev => prev && (
+        prev.youtubeItem || prev.libraryPublication || prev.libraryAction || allowed.some(a => a.id === prev.id)
+      ) ? prev : allowed[0] ?? null);
     } catch (e) {
       console.error("Failed to load apps", e);
     }
@@ -339,6 +410,7 @@ export default function App() {
 
   useEffect(() => {
     loadApps();
+    loadLibrary();
     refreshStatus();
     const statusTimer = setInterval(refreshStatus, 15000);
     const appsTimer = setInterval(loadApps, 60000);
@@ -351,6 +423,7 @@ export default function App() {
             managementMode: status.managementMode,
             arborXrManaged: status.arborXrManaged,
             defaultLauncher: status.defaultLauncher,
+            homeControlMode: status.homeControlMode,
             lockTaskMode: status.lockTaskMode,
           }))
           .catch((error) => console.warn("Could not capture launcher return state", error));
@@ -373,9 +446,27 @@ export default function App() {
       document.removeEventListener("visibilitychange", onResume);
       void batteryListener?.remove();
     };
-  }, [loadApps, refreshStatus]);
+  }, [loadApps, loadLibrary, refreshStatus]);
 
   const handleLaunch = async (item: ContentItem) => {
+    if (item.libraryAction === "browse") {
+      recordDiagnostic("info", "Library catalog browser opened");
+      setIsLibraryBrowserOpen(true);
+      return;
+    }
+    if (item.libraryPublication) {
+      try {
+        recordDiagnostic("info", "Publication opened", {
+          id: item.libraryPublication.id,
+          format: item.libraryPublication.format,
+        });
+        await LibraryBridge.openPublication({ id: item.libraryPublication.id });
+        await loadLibrary();
+      } catch (error) {
+        console.error("Failed to open publication", error);
+      }
+      return;
+    }
     // Approved YouTube sources open the in-app player instead of another app.
     if (item.youtubeItem) {
       if (item.youtubeItem.kind === "channel") {
@@ -502,7 +593,9 @@ export default function App() {
   }, []);
 
   const visibleApps = apps.filter(a => !hiddenApps.has(a.id));
-  const featured = featuredItem && !hiddenApps.has(featuredItem.id) ? featuredItem : visibleApps[0] ?? null;
+  const featured = featuredItem && !hiddenApps.has(featuredItem.id)
+    ? featuredItem
+    : visibleApps[0] ?? libraryContentItems[0] ?? null;
 
   return (
     <div
@@ -563,6 +656,15 @@ export default function App() {
             <ContentRow
               title="Apps & Games"
               items={visibleApps}
+              selectedId={featured?.id ?? null}
+              onSelect={setFeaturedItem}
+              onLaunch={handleLaunch}
+            />
+          )}
+          {deviceProfile?.isTelevision !== true && (
+            <ContentRow
+              title="Books & Audio"
+              items={libraryContentItems}
               selectedId={featured?.id ?? null}
               onSelect={setFeaturedItem}
               onLaunch={handleLaunch}
@@ -637,16 +739,32 @@ export default function App() {
         onRequestDeviceAdmin={async () => { try { await SystemBridge.requestDeviceAdmin(); } catch (e) { console.error("device admin", e); } setTimeout(refreshKiosk, 500); }}
         onLockKiosk={async () => {
           const packages = visibleApps.map(a => a.packageName).filter((p): p is string => !!p);
-          try { await SystemBridge.enableKioskLock({ packages }); } catch (e) { console.error("lock kiosk", e); }
-          refreshKiosk();
+          try {
+            await SystemBridge.enableKioskLock({ packages });
+            await refreshKiosk();
+          } catch (e) {
+            console.error("lock kiosk", e);
+            await refreshKiosk();
+            throw e;
+          }
         }}
-        onUnlockKiosk={async () => { try { await SystemBridge.disableKioskLock(); } catch (e) { console.error("unlock kiosk", e); } refreshKiosk(); }}
+        onUnlockKiosk={async () => {
+          try {
+            await SystemBridge.disableKioskLock();
+            await refreshKiosk();
+          } catch (e) {
+            console.error("unlock kiosk", e);
+            await refreshKiosk();
+            throw e;
+          }
+        }}
         onClearDeviceOwner={async () => { try { await SystemBridge.clearDeviceOwner(); } catch (e) { console.error("clear device owner", e); } setTimeout(refreshKiosk, 500); }}
         onResetAdmin={() => {
           clearAdminConfiguration();
           setIsAdmin(false);
           setIsAdminPanelOpen(false);
         }}
+        onLibraryChanged={loadLibrary}
       />
 
       {playingYouTube && (
@@ -686,7 +804,23 @@ export default function App() {
         />
       )}
 
-      {needsModeSetup && <ModeSetup onChoose={chooseAppMode} />}
+      {isLibraryBrowserOpen && (
+        <LibraryCatalogBrowser
+          onClose={() => {
+            recordDiagnostic("info", "Library catalog browser closed");
+            setIsLibraryBrowserOpen(false);
+            restoreContentTileFocus("library:browse");
+          }}
+          onLibraryChanged={loadLibrary}
+        />
+      )}
+
+      {needsModeSetup && (
+        <ModeSetup
+          onChoose={chooseAppMode}
+          isTelevision={deviceProfile?.isTelevision === true}
+        />
+      )}
 
       {needsOnboarding && (
         <StandaloneOnboarding

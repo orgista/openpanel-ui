@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { ListVideo, Play } from "lucide-react";
+import { BookOpen, Headphones, Library, ListVideo, Play } from "lucide-react";
 import type { Ref } from "react";
 import type { ContentItem } from "../App";
 
@@ -89,9 +89,17 @@ export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, 
           }`}
         >
           <div className="w-11 h-11 rounded-full bg-white/95 flex items-center justify-center shadow-xl">
-            {item.youtubeItem?.kind === "channel"
-              ? <ListVideo className="w-5 h-5 text-black" />
-              : <Play className="w-5 h-5 text-black ml-0.5" fill="currentColor" />}
+            {item.libraryAction === "browse" ? (
+              <Library className="w-5 h-5 text-black" />
+            ) : item.libraryPublication ? (
+              item.libraryPublication.format === "audiobook" || item.libraryPublication.format === "audio"
+                ? <Headphones className="w-5 h-5 text-black" />
+                : <BookOpen className="w-5 h-5 text-black" />
+            ) : item.youtubeItem?.kind === "channel" ? (
+              <ListVideo className="w-5 h-5 text-black" />
+            ) : (
+              <Play className="w-5 h-5 text-black ml-0.5" fill="currentColor" />
+            )}
           </div>
         </div>
 

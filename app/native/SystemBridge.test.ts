@@ -15,6 +15,27 @@ describe("SystemBridge web fallback", () => {
     await expect(SystemBridge.setKeepScreenOn({ enabled: false })).resolves.toBeUndefined();
   });
 
+  it("reports the TV DNS filter without claiming that encrypted DNS is filtering", async () => {
+    await expect(SystemBridge.getDnsFilterStatus()).resolves.toMatchObject({
+      filterPackage: "dnsfilter.android",
+      installed: true,
+      enabled: true,
+      vpnActive: true,
+      filterActive: true,
+      alwaysOn: true,
+      lockdown: false,
+      privateDnsMode: "off",
+      privateDnsHost: null,
+      canManageAlwaysOn: true,
+    });
+
+    await expect(SystemBridge.setDnsFilterAlwaysOn({ enabled: true }))
+      .resolves.toMatchObject({ alwaysOn: true, filterActive: true });
+    await expect(SystemBridge.openDnsFilter()).resolves.toBeUndefined();
+    await expect(SystemBridge.openVpnSettings()).resolves.toBeUndefined();
+    await expect(SystemBridge.openPrivateDnsSettings()).resolves.toBeUndefined();
+  });
+
   it("detects device health and reversibly manages reviewed optional apps", async () => {
     await expect(SystemBridge.getDeviceHealth()).resolves.toMatchObject({
       manufacturer: "Lenovo",

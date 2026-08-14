@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedApp } from "./catalog";
+import { allowedAppsForDevice, isAllowedApp } from "./catalog";
 import type { InstalledApp } from "./SystemBridge";
 
 const app = (overrides: Partial<InstalledApp> = {}): InstalledApp => ({
@@ -56,5 +56,30 @@ describe("isAllowedApp", () => {
   it("always excludes system apps and management utilities", () => {
     expect(isAllowedApp(app({ isSystem: true }), "standalone")).toBe(false);
     expect(isAllowedApp(app({ packageName: "app.xrdm.client" }), "standalone")).toBe(false);
+  });
+
+  it("falls back to launchable user apps when Companion mode is stale", () => {
+    const installed = [
+      app({ packageName: "com.example.one" }),
+      app({ packageName: "com.example.two" }),
+      app({ packageName: "com.android.settings", isSystem: true }),
+    ];
+
+    expect(allowedAppsForDevice(installed, "companion", false).map((item) => item.packageName))
+      .toEqual(["com.example.one", "com.example.two"]);
+  });
+
+  it("does not bypass ArborXR's empty allowlist on a managed device", () => {
+    expect(allowedAppsForDevice([app()], "companion", true)).toEqual([]);
+  });
+
+  it("keeps a non-ArborXR Device Owner allowlist when it is populated", () => {
+    const installed = [
+      app({ packageName: "com.example.allowed", lockTaskPermitted: true }),
+      app({ packageName: "com.example.blocked" }),
+    ];
+
+    expect(allowedAppsForDevice(installed, "companion", false).map((item) => item.packageName))
+      .toEqual(["com.example.allowed"]);
   });
 });

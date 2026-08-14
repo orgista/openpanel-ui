@@ -135,9 +135,14 @@ describe("YouTube storage migration", () => {
     ]);
   });
 
-  it("ships no preconfigured channels and returns only operator-added sources", () => {
-    // Fresh install: nothing is seeded.
-    expect(initializeApprovedYouTubeItems()).toEqual([]);
+  it("adds the five requested channels once and preserves later removals", () => {
+    expect(initializeApprovedYouTubeItems()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "PBS KIDS", sourceLabel: "UCrNnk0wFBnCS1awGjq_ijGQ" }),
+      expect.objectContaining({ title: "TED-Ed", sourceLabel: "UCsooa4yRKGN_zEE8iknghZA" }),
+      expect.objectContaining({ title: "Sesame Street", sourceLabel: "UCoookXUzPciGrEZEXmh4Jjg" }),
+      expect.objectContaining({ title: "Bluey - Official Channel", sourceLabel: "UCVzLLZkDuFGAE2BGdBuBNBg" }),
+      expect.objectContaining({ title: "Homeschool Pop", sourceLabel: "UCfPyVJEBD7Di1YYjTdS2v8g" }),
+    ]));
 
     const existing = addYouTubeItem("dQw4w9WgXcQ", "Existing video");
     const channel = addYouTubeItem(
@@ -152,6 +157,12 @@ describe("YouTube storage migration", () => {
     removeYouTubeItem(channel!.id);
     expect(initializeApprovedYouTubeItems()).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceLabel: "UCsXVk37bltHxD1rDPwtNM8Q" }),
+    ]));
+
+    const requested = getYouTubeItems().find((item) => item.title === "PBS KIDS")!;
+    removeYouTubeItem(requested.id);
+    expect(initializeApprovedYouTubeItems()).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceLabel: "UCrNnk0wFBnCS1awGjq_ijGQ" }),
     ]));
   });
 

@@ -5,6 +5,7 @@ import {
   Activity,
   AlertTriangle,
   BatteryCharging,
+  BellOff,
   Bluetooth,
   Check,
   Home,
@@ -66,11 +67,18 @@ export function PermissionsManager() {
 
   const s = status;
   const isDO = !!s?.deviceOwner;
+  const fireHome = s?.homeControlMode === "fire-redirect"
+    || s?.homeControlMode === "fire-needs-accessibility";
 
   const rows: PermRow[] = [
-    { key: "launcher", label: "Home launcher", icon: Home,
-      detail: "Return to the panel with the Home button.",
-      granted: !!s?.defaultLauncher, action: () => SystemBridge.openLauncherSettings() },
+    { key: "launcher", label: fireHome ? "Fire OS Home redirect" : "Home launcher", icon: Home,
+      detail: fireHome
+        ? "Fire OS reserves Home; accessibility returns it to OpenPanel."
+        : "Return to the panel with the Home button.",
+      granted: !!s?.defaultLauncher || s?.homeControlMode === "fire-redirect",
+      action: fireHome
+        ? () => SystemBridge.openAccessibilitySettings()
+        : () => SystemBridge.openLauncherSettings() },
     { key: "admin", label: "Kiosk admin", icon: Shield,
       detail: isDO ? "OpenPanel is the device owner." : "Lets OpenPanel lock the device into kiosk mode.",
       granted: !!(s?.deviceOwner || s?.deviceAdmin), action: () => SystemBridge.requestDeviceAdmin() },
@@ -81,8 +89,12 @@ export function PermissionsManager() {
       detail: "Pair keyboards, controllers, and audio.",
       granted: !!s?.bluetooth, action: () => SystemBridge.scanBluetooth() },
     { key: "accessibility", label: "Accessibility service", icon: Accessibility,
-      detail: "Detects Home/Recents gestures to keep the kiosk contained.",
+      detail: "Keeps Home in OpenPanel and blocks the Fire OS notification shade.",
       granted: !!s?.accessibility, action: () => SystemBridge.openAccessibilitySettings() },
+    { key: "notifications", label: "Notification blocking", icon: BellOff,
+      detail: "Cancels nonessential app notifications while preserving kiosk and system services.",
+      granted: !!s?.notificationAccess,
+      action: () => SystemBridge.openNotificationListenerSettings() },
     { key: "overlay", label: "Display over other apps", icon: Layers,
       detail: "Lets OpenPanel draw over launched apps when needed.",
       granted: !!s?.overlay, action: () => SystemBridge.openOverlaySettings() },

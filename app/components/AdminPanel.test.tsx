@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { AdminPanel, resetAdminPanelScroll } from "./AdminPanel";
+import { AdminPanel, kioskActionErrorMessage, resetAdminPanelScroll } from "./AdminPanel";
 
 describe("AdminPanel", () => {
   it("returns the scrollable content to the top when changing sections", () => {
@@ -10,6 +10,12 @@ describe("AdminPanel", () => {
     resetAdminPanelScroll(panel);
 
     expect(panel.scrollTop).toBe(0);
+  });
+
+  it("surfaces native kiosk failures without losing the useful explanation", () => {
+    expect(kioskActionErrorMessage(new Error("Fire OS did not enter screen pinning.")))
+      .toBe("Fire OS did not enter screen pinning.");
+    expect(kioskActionErrorMessage("not-an-error")).toBe("The kiosk action failed.");
   });
 
   it("provides an accessible, authenticated Admin reset control", () => {
@@ -121,6 +127,133 @@ describe("AdminPanel", () => {
 
     expect(html).toContain("Device Health");
     expect(html).toContain("Detecting this device");
+  });
+
+  it("shows DNS and telemetry controls only for the detected TV profile", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        deviceProfile={{
+          deviceType: "television",
+          isTelevision: true,
+          isTablet: false,
+          isHandheld: false,
+          hasLeanback: true,
+          hasTouchscreen: false,
+          hasDpad: true,
+          hasHardwareKeyboard: false,
+          smallestScreenWidthDp: 960,
+          hasBattery: false,
+          remoteUi: true,
+          touchUi: false,
+          showBattery: false,
+          supportsLeanbackApps: true,
+          voiceInputAvailable: true,
+          controllerName: "Google TV Remote",
+        }}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="health"
+      />,
+    );
+
+    expect(html).toContain("DNS &amp; Telemetry");
+    expect(html).toContain("personalDNSfilter");
+    expect(html).toContain("Detecting network protection");
+  });
+
+  it("does not let the active management mode restart setup", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="kiosk"
+      />,
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-pressed="true"[^>]*>[^<]*<svg[^>]*>[\s\S]*?Standalone<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>[\s\S]*?Companion \(ArborXR\)<\/button>/);
+  });
+
+  it("exposes standards-based Books & Audio management", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="library"
+      />,
+    );
+
+    expect(html).toContain("Books &amp; Audio");
+    expect(html).toContain("OPDS 1/2 catalogs");
+    expect(html).toContain("Import file");
+    expect(html).toContain("Institutional catalogs");
+    expect(html).toContain("Licensed Palace, Libby, Hoopla, cloudLibrary, or LCP collections");
   });
 
   it("explains that videos, channels, and playlists are supported", () => {

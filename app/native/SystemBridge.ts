@@ -21,9 +21,11 @@ export interface PermissionStatus {
   deviceOwner: boolean;
   deviceAdmin: boolean;
   defaultLauncher: boolean;
+  homeControlMode: "native" | "fire-redirect" | "fire-needs-accessibility" | "other";
   location: boolean;
   bluetooth: boolean;
   accessibility: boolean;
+  notificationAccess: boolean;
   overlay: boolean;
   usageAccess: boolean;
   writeSettings: boolean;
@@ -72,6 +74,7 @@ export interface KioskStatus {
   deviceAdmin: boolean; // OpenPanel device-admin enabled
   arborXrManaged: boolean; // ArborXR (app.xrdm.client) is the Device Owner
   defaultLauncher: boolean; // OpenPanel is the HOME launcher
+  homeControlMode: "native" | "fire-redirect" | "fire-needs-accessibility" | "other";
   lockTaskActive: boolean;
   lockTaskMode: "locked" | "pinned" | "none";
   managementMode: "companion" | "standalone";
@@ -170,6 +173,22 @@ export interface DeviceHealthActionResult {
   enabled?: boolean;
 }
 
+export interface DnsFilterStatus {
+  filterPackage: "dnsfilter.android";
+  versionName: string | null;
+  installed: boolean;
+  enabled: boolean;
+  vpnActive: boolean;
+  filterActive: boolean;
+  alwaysOn: boolean;
+  lockdown: boolean;
+  privateDnsMode: "off" | "opportunistic" | "hostname" | "unknown";
+  privateDnsHost: string | null;
+  privateDnsMayBypassFilter: boolean;
+  canManageAlwaysOn: boolean;
+  arborXrManaged: boolean;
+}
+
 interface SystemBridgePlugin {
   writeDiagnostic(opts: { level: "info" | "warning" | "error"; message: string }): Promise<void>;
   hideKeyboard(): Promise<void>;
@@ -187,6 +206,11 @@ interface SystemBridgePlugin {
   }>;
   getInstalledApps(): Promise<{ apps: InstalledApp[] }>;
   getDeviceHealth(): Promise<DeviceHealthSnapshot>;
+  getDnsFilterStatus(): Promise<DnsFilterStatus>;
+  setDnsFilterAlwaysOn(opts: { enabled: boolean }): Promise<DnsFilterStatus>;
+  openDnsFilter(): Promise<void>;
+  openVpnSettings(): Promise<void>;
+  openPrivateDnsSettings(): Promise<void>;
   getDebloatApps(): Promise<{ profile: string; apps: DebloatApp[] }>;
   applyRecommendedDebloat(opts: { manageNotifications: boolean }): Promise<DeviceHealthActionResult>;
   setDebloatPackageState(opts: { packageName: string; hidden: boolean }): Promise<DeviceHealthActionResult>;
@@ -229,6 +253,7 @@ interface SystemBridgePlugin {
   autoGrantSelfPermissions(): Promise<{ deviceOwner: boolean; granted: number }>;
   setKeyguardDisabled(opts: { disabled: boolean }): Promise<{ disabled: boolean; applied: boolean }>;
   openAccessibilitySettings(): Promise<void>;
+  openNotificationListenerSettings(): Promise<void>;
   openOverlaySettings(): Promise<void>;
   openUsageAccessSettings(): Promise<void>;
   openWriteSettings(): Promise<void>;
@@ -323,6 +348,7 @@ const webHomeschoolPopVideos: YouTubeChannelVideoResult[] = [
 ];
 
 let webManageNotifications = true;
+let webDnsFilterAlwaysOn = true;
 let webDebloatApps: DebloatApp[] = [
   {
     packageName: "com.google.android.youtube",
@@ -495,6 +521,30 @@ const webMock: SystemBridgePlugin = {
   async getDeviceHealth() {
     return webHealthSnapshot();
   },
+  async getDnsFilterStatus() {
+    return {
+      filterPackage: "dnsfilter.android" as const,
+      versionName: "1.50.60.8",
+      installed: true,
+      enabled: true,
+      vpnActive: webDnsFilterAlwaysOn,
+      filterActive: webDnsFilterAlwaysOn,
+      alwaysOn: webDnsFilterAlwaysOn,
+      lockdown: false,
+      privateDnsMode: "off" as const,
+      privateDnsHost: null,
+      privateDnsMayBypassFilter: false,
+      canManageAlwaysOn: true,
+      arborXrManaged: false,
+    };
+  },
+  async setDnsFilterAlwaysOn({ enabled }) {
+    webDnsFilterAlwaysOn = enabled;
+    return this.getDnsFilterStatus();
+  },
+  async openDnsFilter() {},
+  async openVpnSettings() {},
+  async openPrivateDnsSettings() {},
   async getDebloatApps() {
     return { profile: "lenovo", apps: webDebloatApps };
   },
@@ -589,6 +639,7 @@ const webMock: SystemBridgePlugin = {
       deviceAdmin: false,
       arborXrManaged: false,
       defaultLauncher: false,
+      homeControlMode: "other" as const,
       lockTaskActive: false,
       lockTaskMode: "none" as const,
       managementMode: "companion" as const,
@@ -615,9 +666,11 @@ const webMock: SystemBridgePlugin = {
       deviceOwner: false,
       deviceAdmin: false,
       defaultLauncher: false,
+      homeControlMode: "other" as const,
       location: true,
       bluetooth: true,
       accessibility: false,
+      notificationAccess: false,
       overlay: false,
       usageAccess: false,
       writeSettings: false,
@@ -630,6 +683,7 @@ const webMock: SystemBridgePlugin = {
     return { disabled: opts.disabled, applied: opts.disabled };
   },
   async openAccessibilitySettings() {},
+  async openNotificationListenerSettings() {},
   async openOverlaySettings() {},
   async openUsageAccessSettings() {},
   async openWriteSettings() {},

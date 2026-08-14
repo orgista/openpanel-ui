@@ -1,15 +1,17 @@
 import { motion } from "motion/react";
-import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw, HeartPulse } from "lucide-react";
+import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw, HeartPulse, Library } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type KioskYouTubeItem, thumbnailUrl } from "../native/youtube";
-import type { DeviceProfile, KioskStatus } from "../native/SystemBridge";
+import { SystemBridge, type DeviceProfile, type KioskStatus } from "../native/SystemBridge";
 import type { AppMode } from "../appConfig";
 import { YouTubeSearchPanel } from "./YouTubeSearchPanel";
 import { PermissionsManager } from "./PermissionsManager";
 import { dismissSoftKeyboard } from "../native/keyboard";
 import { clearDiagnostics, getDiagnostics, type DiagnosticEntry } from "../native/diagnostics";
 import { DeviceHealthPanel } from "./DeviceHealthPanel";
+import { LibraryManager } from "./LibraryManager";
+import { NetworkPrivacyPanel } from "./NetworkPrivacyPanel";
 
 interface App {
   id: string;
@@ -44,14 +46,15 @@ interface AdminPanelProps {
   onRefreshKiosk: () => void;
   onSetDefaultLauncher: () => void;
   onRequestDeviceAdmin: () => void;
-  onLockKiosk: () => void;
-  onUnlockKiosk: () => void;
+  onLockKiosk: () => Promise<void> | void;
+  onUnlockKiosk: () => Promise<void> | void;
   onClearDeviceOwner: () => void;
   onResetAdmin: () => void;
-  initialTab?: "apps" | "health" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+  onLibraryChanged?: () => void;
+  initialTab?: "apps" | "health" | "library" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
 }
 
-type AdminTab = "apps" | "health" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+type AdminTab = "apps" | "health" | "library" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
 
 const adminBodyFocusableSelector = [
   "button:not([disabled])",
@@ -64,6 +67,12 @@ const adminBodyFocusableSelector = [
 
 export function resetAdminPanelScroll(panel: HTMLDivElement | null) {
   if (panel) panel.scrollTop = 0;
+}
+
+export function kioskActionErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : "The kiosk action failed.";
 }
 
 export function AdminPanel({
@@ -94,6 +103,7 @@ export function AdminPanel({
   onUnlockKiosk,
   onClearDeviceOwner,
   onResetAdmin,
+  onLibraryChanged,
   initialTab = "apps",
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
@@ -101,6 +111,8 @@ export function AdminPanel({
   const [videoTitle, setVideoTitle] = useState("");
   const [videoError, setVideoError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [kioskActionError, setKioskActionError] = useState<string | null>(null);
+  const [kioskActionBusy, setKioskActionBusy] = useState(false);
   const [timeoutDraft, setTimeoutDraft] = useState(String(inactivityTimeout));
   const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>(
     () => getDiagnostics().slice().reverse(),
@@ -108,10 +120,22 @@ export function AdminPanel({
   const bodyRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<typeof activeTab, HTMLButtonElement | null>>>({});
   const tabOrder: AdminTab[] = standalone
-    ? ["apps", "health", "youtube", "power", "kiosk", "diagnostics", "security"]
-    : ["apps", "health", "youtube", "power", "diagnostics", "security"];
+    ? ["apps", "health", "library", "youtube", "power", "kiosk", "diagnostics", "security"]
+    : ["apps", "health", "library", "youtube", "power", "diagnostics", "security"];
 
   const refreshDiagnostics = () => setDiagnostics(getDiagnostics().slice().reverse());
+
+  const runKioskAction = async (action: () => Promise<void> | void) => {
+    setKioskActionBusy(true);
+    setKioskActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setKioskActionError(kioskActionErrorMessage(error));
+    } finally {
+      setKioskActionBusy(false);
+    }
+  };
 
   const bodyFocusableElements = () => Array.from(
     bodyRef.current?.querySelectorAll<HTMLElement>(adminBodyFocusableSelector) ?? [],
@@ -254,6 +278,20 @@ export function AdminPanel({
           >
             <HeartPulse className="w-4 h-4" />
             Device Health
+          </button>
+          <button
+            ref={(element) => { tabRefs.current.library = element; }}
+            onClick={() => setActiveTab("library")}
+            onKeyDown={(event) => handleTabKeyDown("library", event)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              activeTab === "library"
+                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
+                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
+            }`}
+            style={{ fontWeight: 500 }}
+          >
+            <Library className="w-4 h-4" />
+            Books &amp; Audio
           </button>
           <button
             ref={(element) => { tabRefs.current.youtube = element; }}
@@ -410,10 +448,17 @@ export function AdminPanel({
           )}
 
           {activeTab === "health" && (
-            <DeviceHealthPanel
-              manageNotifications={manageNotifications}
-              onSetManageNotifications={onSetManageNotifications}
-            />
+            <>
+              <DeviceHealthPanel
+                manageNotifications={manageNotifications}
+                onSetManageNotifications={onSetManageNotifications}
+              />
+              {deviceProfile?.isTelevision && <NetworkPrivacyPanel />}
+            </>
+          )}
+
+          {activeTab === "library" && (
+            <LibraryManager onLibraryChanged={onLibraryChanged} />
           )}
 
           {activeTab === "youtube" && (
@@ -709,15 +754,21 @@ export function AdminPanel({
                 </div>
                 <div className="flex gap-3">
                   <button
+                    type="button"
                     onClick={() => onSetAppMode("standalone")}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors ${appMode === "standalone" ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]" : "bg-[oklch(20.5%_0_0)] text-[oklch(70.8%_0_0)] border border-[oklch(43.9%_0_0)] hover:text-[oklch(87%_0_0)]"}`}
+                    disabled={appMode === "standalone"}
+                    aria-pressed={appMode === "standalone"}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors disabled:cursor-default ${appMode === "standalone" ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]" : "bg-[oklch(20.5%_0_0)] text-[oklch(70.8%_0_0)] border border-[oklch(43.9%_0_0)] hover:text-[oklch(87%_0_0)]"}`}
                     style={{ fontWeight: 500 }}
                   >
                     <Smartphone className="w-4 h-4" /> Standalone
                   </button>
                   <button
+                    type="button"
                     onClick={() => onSetAppMode("companion")}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors ${appMode === "companion" ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]" : "bg-[oklch(20.5%_0_0)] text-[oklch(70.8%_0_0)] border border-[oklch(43.9%_0_0)] hover:text-[oklch(87%_0_0)]"}`}
+                    disabled={appMode === "companion"}
+                    aria-pressed={appMode === "companion"}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors disabled:cursor-default ${appMode === "companion" ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]" : "bg-[oklch(20.5%_0_0)] text-[oklch(70.8%_0_0)] border border-[oklch(43.9%_0_0)] hover:text-[oklch(87%_0_0)]"}`}
                     style={{ fontWeight: 500 }}
                   >
                     <Monitor className="w-4 h-4" /> Companion (ArborXR)
@@ -728,7 +779,19 @@ export function AdminPanel({
               {/* Setup steps */}
               <div className="space-y-3 mb-6">
                 {[
-                  { label: "Set OpenPanel as Home launcher", ok: !!kioskStatus?.defaultLauncher, action: onSetDefaultLauncher, actionLabel: "Choose", hint: undefined as string | undefined },
+                  {
+                    label: kioskStatus?.homeControlMode?.startsWith("fire-")
+                      ? "Fire OS Home redirect"
+                      : "Set OpenPanel as Home launcher",
+                    ok: !!kioskStatus?.defaultLauncher || kioskStatus?.homeControlMode === "fire-redirect",
+                    action: kioskStatus?.homeControlMode?.startsWith("fire-")
+                      ? () => { void SystemBridge.openAccessibilitySettings(); }
+                      : onSetDefaultLauncher,
+                    actionLabel: kioskStatus?.homeControlMode?.startsWith("fire-") ? "Enable" : "Choose",
+                    hint: kioskStatus?.homeControlMode?.startsWith("fire-")
+                      ? "Fire OS keeps its protected launcher; OpenPanel intercepts Home through accessibility."
+                      : undefined as string | undefined,
+                  },
                   { label: "Enable OpenPanel device admin", ok: !!kioskStatus?.deviceAdmin, action: onRequestDeviceAdmin, actionLabel: "Enable", hint: undefined as string | undefined },
                   { label: "Device Owner (silent full lockdown)", ok: !!kioskStatus?.deviceOwner, action: undefined, actionLabel: undefined, hint: "Set by ArborXR, by adb, or by the provisioning QR below — an installed app can't promote itself" },
                 ].map((row) => (
@@ -766,7 +829,8 @@ export function AdminPanel({
               {/* Lock / unlock */}
               {kioskStatus?.lockTaskActive ? (
                 <button
-                  onClick={onUnlockKiosk}
+                  onClick={() => void runKioskAction(onUnlockKiosk)}
+                  disabled={kioskActionBusy}
                   className="w-full flex items-center justify-center gap-3 py-4 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/30 transition-colors"
                   style={{ fontWeight: 500 }}
                 >
@@ -774,12 +838,19 @@ export function AdminPanel({
                 </button>
               ) : (
                 <button
-                  onClick={onLockKiosk}
+                  onClick={() => void runKioskAction(onLockKiosk)}
+                  disabled={kioskActionBusy}
                   className="w-full flex items-center justify-center gap-3 py-4 bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)] rounded-lg hover:bg-[oklch(48.8%_0.243_264.376)]/80 transition-colors"
                   style={{ fontWeight: 500 }}
                 >
                   <Lock className="w-5 h-5" /> Lock device into kiosk
                 </button>
+              )}
+
+              {kioskActionError && (
+                <p role="alert" className="mt-3 rounded-lg border border-[oklch(70.4%_0.191_22.216)]/40 bg-[oklch(70.4%_0.191_22.216)]/10 px-4 py-3 text-sm text-[oklch(82%_0.12_22)]">
+                  {kioskActionError}
+                </p>
               )}
 
               {kioskStatus?.deviceOwner && (

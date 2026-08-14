@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { ListVideo, Play, Star } from "lucide-react";
+import { BookOpen, Headphones, Library, ListVideo, Play, Star } from "lucide-react";
 import type { ContentItem } from "../App";
 
 interface FeaturedHeroProps {
@@ -139,10 +139,22 @@ export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
                 className="flex items-center gap-2.5 px-7 py-3.5 bg-[oklch(98%_0_0)] text-[oklch(11%_0_0)] rounded-md transition-colors hover:bg-[oklch(90%_0_0)]"
                 style={{ fontWeight: 600, fontSize: "0.9375rem" }}
               >
-                {item.youtubeItem?.kind === "channel"
-                  ? <ListVideo className="w-5 h-5" />
-                  : <Play className="w-5 h-5" fill="currentColor" />}
-                {item.youtubeItem?.kind === "channel" ? "Explore" : item.youtubeItem ? "Play" : "Open"}
+                {item.libraryAction === "browse" ? (
+                  <Library className="w-5 h-5" />
+                ) : item.libraryPublication ? (
+                  item.libraryPublication.format === "audiobook" || item.libraryPublication.format === "audio"
+                    ? <Headphones className="w-5 h-5" />
+                    : <BookOpen className="w-5 h-5" />
+                ) : item.youtubeItem?.kind === "channel" ? (
+                  <ListVideo className="w-5 h-5" />
+                ) : (
+                  <Play className="w-5 h-5" fill="currentColor" />
+                )}
+                {item.libraryAction === "browse"
+                  ? "Browse"
+                  : item.libraryPublication
+                    ? item.libraryPublication.format === "audiobook" || item.libraryPublication.format === "audio" ? "Listen" : "Read"
+                    : item.youtubeItem?.kind === "channel" ? "Explore" : item.youtubeItem ? "Play" : "Open"}
               </motion.button>
             </motion.div>
           </div>

@@ -4,6 +4,35 @@
 
 const KEY = "openpanel.youtube.v2";
 const LEGACY_KEY = "openpanel.youtube.v1";
+const REQUESTED_CHANNELS_SEED_KEY = "openpanel.youtube.requested-channels.v1";
+
+const REQUESTED_CHANNELS = [
+  {
+    channelId: "UCrNnk0wFBnCS1awGjq_ijGQ",
+    title: "PBS KIDS",
+    thumbnailUrl: "https://yt3.googleusercontent.com/ZBcGbfxSEOigEe07nPd5AsSrYRO9NLqyxBZ1rGLtFC4Fr6eUqoL5D97U_aHLN4wO-p66Q7sO0g=s900-c-k-c0x00ffffff-no-rj",
+  },
+  {
+    channelId: "UCsooa4yRKGN_zEE8iknghZA",
+    title: "TED-Ed",
+    thumbnailUrl: "https://yt3.googleusercontent.com/PKUi-Lc3VFjUfsIhjK3n-FJDNBf-XQLdg4G4bv4fPFF96D3MVnkbub9ePpLoWdmdFgl5I1Zd=s900-c-k-c0x00ffffff-no-rj",
+  },
+  {
+    channelId: "UCoookXUzPciGrEZEXmh4Jjg",
+    title: "Sesame Street",
+    thumbnailUrl: "https://yt3.googleusercontent.com/UqIbNSghcysIlsbnGUxGMcY1Me7_bJ_zCrjz1oy9PueZVo63d1CnIk1tz8sAmTMNX9ojl4MhDQ=s900-c-k-c0x00ffffff-no-rj",
+  },
+  {
+    channelId: "UCVzLLZkDuFGAE2BGdBuBNBg",
+    title: "Bluey - Official Channel",
+    thumbnailUrl: "https://yt3.googleusercontent.com/7Jlomy-7asRjE8WHiLbAqw-LJq5VdyRpBnXU7yxLi-lqXS_OSB5Kd7MLDv9ybsafyOdi5uzCCQ=s900-c-k-c0x00ffffff-no-rj",
+  },
+  {
+    channelId: "UCfPyVJEBD7Di1YYjTdS2v8g",
+    title: "Homeschool Pop",
+    thumbnailUrl: "https://yt3.googleusercontent.com/yENC7nbCi2IqwCeDy8T7Kzpcubxt-iz_yR69dlKGXvwufaEJIbk7iYYseVAqMAAoLNrs4hjR=s900-c-k-c0x00ffffff-no-rj",
+  },
+] as const;
 
 export type YouTubeSourceKind = "video" | "channel" | "playlist";
 export type YouTubeListType = "playlist" | "user_uploads";
@@ -312,12 +341,23 @@ export function getYouTubeItems(): KioskYouTubeItem[] {
   return migrated;
 }
 
-/**
- * Return the operator-configured YouTube sources. OpenPanel ships with no
- * preconfigured channels — the panel starts empty and channels are added
- * during standalone onboarding or from the Admin Panel → YouTube tab.
- */
+/** Add this tablet's requested channels once while preserving later removals. */
 export function initializeApprovedYouTubeItems(): KioskYouTubeItem[] {
+  try {
+    if (localStorage.getItem(REQUESTED_CHANNELS_SEED_KEY) !== "1") {
+      for (const channel of REQUESTED_CHANNELS) {
+        addYouTubeItem(
+          `https://www.youtube.com/channel/${channel.channelId}`,
+          channel.title,
+          channel.thumbnailUrl,
+        );
+      }
+      localStorage.setItem(REQUESTED_CHANNELS_SEED_KEY, "1");
+    }
+  } catch {
+    // Storage may be unavailable in a restricted browser context. The caller
+    // still receives whatever sources are currently readable.
+  }
   return getYouTubeItems();
 }
 

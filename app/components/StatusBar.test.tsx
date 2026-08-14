@@ -20,6 +20,8 @@ describe("StatusBar", () => {
     expect(html).toContain('aria-label="Wi-Fi: Dev Network"');
     expect(html).toContain('aria-label="Bluetooth connected"');
     expect(html).toContain('aria-label="Open settings"');
+    expect(html).toContain('data-openpanel-brand-mark="true"');
+    expect(html).toContain('alt=""');
   });
 
   it.each([

@@ -423,7 +423,7 @@ export function SettingsModal({
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
+              <div className="settings-modal-header shrink-0 flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
                 <h2 className="text-3xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>Settings</h2>
                 <button
                   type="button"
@@ -436,7 +436,7 @@ export function SettingsModal({
                 </button>
               </div>
 
-              <div className="flex items-center gap-4 p-8 border-b border-[oklch(26.9%_0_0)]">
+              <div className="settings-modal-tabs shrink-0 flex items-center gap-4 p-8 border-b border-[oklch(26.9%_0_0)]">
                 <button
                   ref={(element) => { tabRefs.current.wifi = element; }}
                   onClick={() => setActiveTab("wifi")}
@@ -509,7 +509,7 @@ export function SettingsModal({
               <div
                 ref={settingsBodyRef}
                 onKeyDownCapture={handleSettingsBodyKeyDownCapture}
-                className="flex-1 overflow-y-auto p-8"
+                className="settings-modal-body min-h-0 flex-1 overflow-y-auto p-8"
               >
                 {activeTab === "wifi" && usesTvWifiPicker && !wifiListVisible && (
                   <div className="h-full min-h-48 flex items-center justify-center text-center">
@@ -831,7 +831,7 @@ export function SettingsModal({
                 )}
               </div>
 
-              <div className="border-t border-[oklch(26.9%_0_0)] p-8 flex gap-4 items-center">
+              <div className="settings-modal-footer shrink-0 border-t border-[oklch(26.9%_0_0)] p-8 flex gap-4 items-center">
                 {isAdmin ? (
                   <>
                     <button

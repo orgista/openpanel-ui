@@ -5,17 +5,20 @@ import {
   Activity,
   ArrowRight,
   BatteryCharging,
+  BellOff,
   Bluetooth,
   Check,
   Home,
   Layers,
   LayoutGrid,
+  Library,
   Loader2,
   Lock,
   Shield,
   SlidersHorizontal,
   Wifi,
   Youtube,
+  Upload,
 } from "lucide-react";
 import { SystemBridge, type InstalledApp, type PermissionStatus } from "../native/SystemBridge";
 import type { DeviceProfile } from "../native/SystemBridge";
@@ -24,6 +27,8 @@ import { isAllowedApp } from "../native/catalog";
 import { addYouTubeItem } from "../native/youtube";
 import { PinInput } from "./PinInput";
 import { DeviceHealthPanel } from "./DeviceHealthPanel";
+import { LibraryBridge } from "../native/LibraryBridge";
+import { OpenPanelBrand } from "./OpenPanelBrand";
 
 interface StandaloneOnboardingProps {
   deviceProfile: DeviceProfile | null;
@@ -33,13 +38,19 @@ interface StandaloneOnboardingProps {
   onComplete: (hiddenPackages: string[]) => void;
 }
 
-type StepId = "pin" | "permissions" | "health" | "apps" | "optional";
-const STEPS: StepId[] = ["pin", "permissions", "health", "apps", "optional"];
+export type StepId = "pin" | "permissions" | "health" | "apps" | "library" | "optional";
+const TABLET_STEPS: StepId[] = ["pin", "permissions", "health", "apps", "library", "optional"];
+const TELEVISION_STEPS: StepId[] = ["pin", "permissions", "apps", "optional"];
+
+export function onboardingStepsForDevice(isTelevision: boolean): StepId[] {
+  return [...(isTelevision ? TELEVISION_STEPS : TABLET_STEPS)];
+}
 const STEP_TITLES: Record<StepId, string> = {
   pin: "Create an admin PIN",
   permissions: "Grant permissions",
   health: "Optimize this device",
   apps: "Choose apps",
+  library: "Books & Audio",
   optional: "Wi-Fi & YouTube",
 };
 
@@ -144,7 +155,7 @@ function PinStep({ onDone }: { onDone: () => void }) {
 // -------------------- Step 2: permissions --------------------
 
 interface PermRow {
-  key: string;
+  key: PermissionKey;
   label: string;
   detail: string;
   icon: typeof Home;
@@ -152,7 +163,38 @@ interface PermRow {
   action: () => Promise<unknown>;
 }
 
-function PermissionsStep({ onNext }: { onNext: () => void }) {
+type PermissionKey = "launcher" | "admin" | "wifi" | "bluetooth" | "accessibility"
+  | "notifications" | "overlay" | "usage" | "write" | "battery";
+
+const TABLET_PERMISSION_KEYS: PermissionKey[] = [
+  "launcher",
+  "admin",
+  "wifi",
+  "bluetooth",
+  "accessibility",
+  "notifications",
+  "overlay",
+  "usage",
+  "write",
+  "battery",
+];
+
+export function permissionKeysForDevice(
+  isTelevision: boolean,
+  _fireHome: boolean,
+): PermissionKey[] {
+  // TV permissions are deliberately provisioned after first run from Admin or
+  // the active MDM. Only HOME is essential to finish a usable remote setup.
+  return [...(isTelevision ? ["launcher"] as PermissionKey[] : TABLET_PERMISSION_KEYS)];
+}
+
+function PermissionsStep({
+  deviceProfile,
+  onNext,
+}: {
+  deviceProfile: DeviceProfile | null;
+  onNext: () => void;
+}) {
   const [status, setStatus] = useState<PermissionStatus | null>(null);
 
   const refresh = useCallback(async () => {
@@ -185,13 +227,19 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
 
   const s = status;
   const isDO = !!s?.deviceOwner;
+  const fireHome = s?.homeControlMode === "fire-redirect"
+    || s?.homeControlMode === "fire-needs-accessibility";
 
-  const rows: PermRow[] = [
+  const allRows: PermRow[] = [
     {
-      key: "launcher", label: "Set OpenPanel as Home", icon: Home,
-      detail: "Return to the panel with the Home button.",
-      granted: !!s?.defaultLauncher,
-      action: () => SystemBridge.openLauncherSettings(),
+      key: "launcher", label: fireHome ? "Fire OS Home redirect" : "Set OpenPanel as Home", icon: Home,
+      detail: fireHome
+        ? "Fire OS reserves Home; accessibility returns it to OpenPanel."
+        : "Return to the panel with the Home button.",
+      granted: !!s?.defaultLauncher || s?.homeControlMode === "fire-redirect",
+      action: fireHome
+        ? () => SystemBridge.openAccessibilitySettings()
+        : () => SystemBridge.openLauncherSettings(),
     },
     {
       key: "admin", label: "Kiosk admin", icon: Shield,
@@ -213,9 +261,15 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
     },
     {
       key: "accessibility", label: "Accessibility service", icon: Accessibility,
-      detail: "Detects Home/Recents gestures to keep the kiosk contained.",
+      detail: "Keeps Home in OpenPanel and blocks the Fire OS notification shade.",
       granted: !!s?.accessibility,
       action: () => SystemBridge.openAccessibilitySettings(),
+    },
+    {
+      key: "notifications", label: "Notification blocking", icon: BellOff,
+      detail: "Cancels nonessential app notifications while preserving kiosk and system services.",
+      granted: !!s?.notificationAccess,
+      action: () => SystemBridge.openNotificationListenerSettings(),
     },
     {
       key: "overlay", label: "Display over other apps", icon: Layers,
@@ -242,13 +296,18 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
       action: () => SystemBridge.requestIgnoreBatteryOptimizations(),
     },
   ];
+  const permissionKeys = permissionKeysForDevice(
+    deviceProfile?.isTelevision === true,
+    fireHome,
+  );
+  const rows = allRows.filter((row) => permissionKeys.includes(row.key));
 
   return (
     <div className={`${cardClass} p-6 w-full max-w-2xl mx-auto`}>
       <p className="text-[oklch(70.8%_0_0)] text-sm mb-5">
-        Grant these so the kiosk works fully. As device owner, OpenPanel grants what it
-        can automatically — the rest open the matching Settings screen. Skip any and grant
-        them later from the Admin panel.
+        {deviceProfile?.isTelevision
+          ? "Set OpenPanel as this TV's Home app. Optional kiosk and privacy controls stay available in Admin after setup."
+          : "Grant these so the kiosk works fully. As device owner, OpenPanel grants what it can automatically — the rest open the matching Settings screen. Skip any and grant them later from the Admin panel."}
       </p>
       {s === null ? (
         <div className="flex items-center justify-center gap-2 py-10 text-[oklch(70%_0_0)]">
@@ -429,7 +488,93 @@ function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
   );
 }
 
-// -------------------- Step 5: optional Wi-Fi + YouTube --------------------
+// -------------------- Step 5: optional library --------------------
+
+export function LibrarySetupStep({ onNext }: { onNext: () => void }) {
+  const [catalogUrl, setCatalogUrl] = useState("");
+  const [busy, setBusy] = useState<"import" | "catalog" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const importPublication = useCallback(async () => {
+    setBusy("import");
+    setMessage(null);
+    try {
+      const { publication } = await LibraryBridge.importPublication();
+      setMessage(`${publication.title} is ready offline.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The selected file could not be imported.");
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  const addCatalog = useCallback(async () => {
+    if (!catalogUrl.trim()) {
+      setMessage("Enter an OPDS catalog URL, or continue and add one later.");
+      return;
+    }
+    setBusy("catalog");
+    setMessage(null);
+    try {
+      const { catalog } = await LibraryBridge.addCatalog({ url: catalogUrl.trim() });
+      setCatalogUrl("");
+      setMessage(`${catalog.title} was added.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "That OPDS catalog could not be added.");
+    } finally {
+      setBusy(null);
+    }
+  }, [catalogUrl]);
+
+  return (
+    <div className={`${cardClass} p-6 w-full max-w-2xl mx-auto`}>
+      <div className="flex items-start gap-4 mb-6">
+        <div className="size-12 rounded-xl bg-[oklch(32%_0.08_264)] flex items-center justify-center shrink-0">
+          <Library className="size-6 text-white" />
+        </div>
+        <div>
+          <h2 className="text-2xl text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>Connect the reading library</h2>
+          <p className="text-[oklch(70.8%_0_0)] text-sm">
+            No catalog is preloaded. Add an institution's OPDS feed or import a local EPUB, PDF, audiobook, MP3, or AAC file when you want one.
+          </p>
+        </div>
+      </div>
+
+      <button type="button" onClick={() => void importPublication()} disabled={busy !== null} className={`${ghostBtn} w-full mb-4`}>
+        {busy === "import" ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+        Import a local publication
+      </button>
+
+      <div className="rounded-xl bg-[oklch(24%_0_0)] p-4 mb-4">
+        <label className="block text-[oklch(84%_0_0)] text-sm mb-2" style={{ fontWeight: 500 }}>Institutional OPDS URL (optional)</label>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={catalogUrl}
+            onChange={(event) => setCatalogUrl(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void addCatalog(); }}
+            inputMode="url"
+            autoComplete="off"
+            placeholder="https://library.example.org/opds"
+            disabled={busy !== null}
+            className="flex-1 rounded-xl bg-[oklch(20%_0_0)] text-[oklch(95%_0_0)] border border-[oklch(43.9%_0_0)] px-4 py-2.5 disabled:opacity-60 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
+          />
+          <button type="button" onClick={() => void addCatalog()} disabled={busy !== null} className={ghostBtn}>
+            {busy === "catalog" ? <Loader2 className="size-4 animate-spin" /> : "Add catalog"}
+          </button>
+        </div>
+        <p className="text-xs text-[oklch(58%_0_0)] mt-3">HTTPS only. Licensed borrowing and DRM require the library's approved authentication connector.</p>
+      </div>
+
+      {message && <p role="status" className="text-sm text-[oklch(78%_0_0)] mb-4">{message}</p>}
+
+      <button type="button" onClick={onNext} className={`${primaryBtn} w-full`}>
+        Continue <ArrowRight className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+// -------------------- Step 6: optional Wi-Fi + YouTube --------------------
 
 function OptionalStep({ onFinish }: { onFinish: () => void }) {
   const [channel, setChannel] = useState("");
@@ -514,14 +659,21 @@ function OptionalStep({ onFinish }: { onFinish: () => void }) {
 // -------------------- Wizard shell --------------------
 
 export function StandaloneOnboarding({
+  deviceProfile,
   manageNotifications,
   onSetManageNotifications,
   onComplete,
 }: StandaloneOnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [hiddenPackages, setHiddenPackages] = useState<string[]>([]);
-  const step = STEPS[stepIndex];
-  const goNext = useCallback(() => setStepIndex((i) => Math.min(STEPS.length - 1, i + 1)), []);
+  const isTelevision = deviceProfile?.isTelevision === true;
+  const steps = useMemo(() => onboardingStepsForDevice(isTelevision), [isTelevision]);
+  const safeStepIndex = Math.min(stepIndex, steps.length - 1);
+  const step = steps[safeStepIndex];
+  const goNext = useCallback(
+    () => setStepIndex((i) => Math.min(steps.length - 1, i + 1)),
+    [steps.length],
+  );
 
   const handleAppsNext = useCallback((hidden: string[]) => {
     setHiddenPackages(hidden);
@@ -529,19 +681,22 @@ export function StandaloneOnboarding({
   }, [goNext]);
 
   const progress = useMemo(
-    () => STEPS.map((s, i) => ({ s, done: i < stepIndex, current: i === stepIndex })),
-    [stepIndex],
+    () => steps.map((s, i) => ({ s, done: i < safeStepIndex, current: i === safeStepIndex })),
+    [safeStepIndex, steps],
   );
 
   return (
     <div data-dpad-scope className="fixed inset-0 bg-[oklch(11%_0_0)] z-[300] overflow-y-auto p-6 sm:p-10">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-3xl sm:text-4xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 600 }}>
-            Set up standalone kiosk
+          <div className="flex justify-center mb-4">
+            <OpenPanelBrand iconClassName="size-12" wordmarkClassName="text-3xl sm:text-4xl" />
+          </div>
+          <h1 className="text-xl sm:text-2xl text-[oklch(85%_0_0)] mb-2" style={{ fontWeight: 500 }}>
+            {isTelevision ? "Set up this TV" : "Set up standalone kiosk"}
           </h1>
           <p className="text-[oklch(70.8%_0_0)]">
-            Step {stepIndex + 1} of {STEPS.length} — {STEP_TITLES[step]}
+            Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
           </p>
           <div className="flex items-center justify-center gap-2 mt-4" aria-hidden>
             {progress.map(({ s, done, current }) => (
@@ -557,7 +712,7 @@ export function StandaloneOnboarding({
 
         <motion.div key={step} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {step === "pin" && <PinStep onDone={goNext} />}
-          {step === "permissions" && <PermissionsStep onNext={goNext} />}
+          {step === "permissions" && <PermissionsStep deviceProfile={deviceProfile} onNext={goNext} />}
           {step === "health" && (
             <DeviceHealthStep
               manageNotifications={manageNotifications}
@@ -566,6 +721,7 @@ export function StandaloneOnboarding({
             />
           )}
           {step === "apps" && <AppsStep onNext={handleAppsNext} />}
+          {step === "library" && <LibrarySetupStep onNext={goNext} />}
           {step === "optional" && <OptionalStep onFinish={() => onComplete(hiddenPackages)} />}
         </motion.div>
       </div>
