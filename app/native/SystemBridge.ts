@@ -33,13 +33,6 @@ export interface PermissionStatus {
   keyguardDisabled: boolean;
 }
 
-// Pieces for a Device-Owner provisioning QR; the operator adds the hosted APK URL.
-export interface ProvisioningPayload {
-  packageName: string;
-  component: string;
-  checksum: string | null;
-}
-
 export interface WifiStatus {
   enabled: boolean;
   connected: boolean;
@@ -102,6 +95,7 @@ export interface DeviceProfile {
   isTelevision: boolean;
   isTablet: boolean;
   isHandheld: boolean;
+  isFireOs?: boolean;
   hasLeanback: boolean;
   hasTouchscreen: boolean;
   hasDpad: boolean;
@@ -258,7 +252,6 @@ interface SystemBridgePlugin {
   openUsageAccessSettings(): Promise<void>;
   openWriteSettings(): Promise<void>;
   requestIgnoreBatteryOptimizations(): Promise<{ granted?: boolean }>;
-  getProvisioningPayload(): Promise<ProvisioningPayload>;
   addListener(
     event: "bluetoothStateChanged",
     cb: (data: { enabled: boolean }) => void
@@ -446,6 +439,7 @@ const webMock: SystemBridgePlugin = {
       isTelevision: true,
       isTablet: false,
       isHandheld: false,
+      isFireOs: false,
       hasLeanback: true,
       hasTouchscreen: false,
       hasDpad: true,
@@ -692,13 +686,6 @@ const webMock: SystemBridgePlugin = {
   async openUsageAccessSettings() {},
   async openWriteSettings() {},
   async requestIgnoreBatteryOptimizations() { return { granted: false }; },
-  async getProvisioningPayload() {
-    return {
-      packageName: "com.orgista.openpanel",
-      component: "com.orgista.openpanel/com.orgista.openpanel.OpenPanelDeviceAdminReceiver",
-      checksum: null,
-    };
-  },
   async addListener() {
     return { remove: async () => {} } as PluginListenerHandle;
   },

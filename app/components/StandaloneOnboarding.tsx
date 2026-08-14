@@ -243,7 +243,7 @@ function PermissionsStep({
     },
     {
       key: "admin", label: "Kiosk admin", icon: Shield,
-      detail: isDO ? "OpenPanel is the device owner." : "Lets OpenPanel lock the device into kiosk mode.",
+      detail: isDO ? "OpenPanel has full managed-device control." : "Lets OpenPanel lock the device into kiosk mode.",
       granted: !!(s?.deviceOwner || s?.deviceAdmin),
       action: () => SystemBridge.requestDeviceAdmin(),
     },
@@ -307,7 +307,9 @@ function PermissionsStep({
       <p className="text-[oklch(70.8%_0_0)] text-sm mb-5">
         {deviceProfile?.isTelevision
           ? "Set OpenPanel as this TV's Home app. Optional kiosk and privacy controls stay available in Admin after setup."
-          : "Grant these so the kiosk works fully. As device owner, OpenPanel grants what it can automatically — the rest open the matching Settings screen. Skip any and grant them later from the Admin panel."}
+          : deviceProfile?.isFireOs
+            ? "Grant the Fire Home redirect and kiosk access below. Skip any item now and grant it later from the Admin panel."
+            : "Grant these so the kiosk works fully. Managed devices receive supported grants automatically; the rest open the matching Settings screen. Skip any and grant them later from the Admin panel."}
       </p>
       {s === null ? (
         <div className="flex items-center justify-center gap-2 py-10 text-[oklch(70%_0_0)]">
@@ -369,10 +371,12 @@ function PermissionsStep({
 function DeviceHealthStep({
   manageNotifications,
   onSetManageNotifications,
+  isFireOs,
   onNext,
 }: {
   manageNotifications: boolean;
   onSetManageNotifications: (enabled: boolean) => void;
+  isFireOs: boolean;
   onNext: () => void;
 }) {
   return (
@@ -382,6 +386,7 @@ function DeviceHealthStep({
         onSetManageNotifications={onSetManageNotifications}
         autoApply
         setupMode
+        isFireOs={isFireOs}
       />
       <button type="button" onClick={onNext} className={`${primaryBtn} w-full mt-7`}>
         Continue <ArrowRight className="size-4" />
@@ -717,6 +722,7 @@ export function StandaloneOnboarding({
             <DeviceHealthStep
               manageNotifications={manageNotifications}
               onSetManageNotifications={onSetManageNotifications}
+              isFireOs={deviceProfile?.isFireOs === true}
               onNext={goNext}
             />
           )}

@@ -122,6 +122,10 @@ export function AdminPanel({
   const tabOrder: AdminTab[] = standalone
     ? ["apps", "health", "library", "youtube", "power", "kiosk", "diagnostics", "security"]
     : ["apps", "health", "library", "youtube", "power", "diagnostics", "security"];
+  const isFireOs = deviceProfile?.isFireOs === true
+    || kioskStatus?.homeControlMode?.startsWith("fire-") === true;
+  const kioskActive = !!kioskStatus?.lockTaskActive
+    || (isFireOs && !!kioskStatus?.kioskEnabled);
 
   const refreshDiagnostics = () => setDiagnostics(getDiagnostics().slice().reverse());
 
@@ -452,6 +456,7 @@ export function AdminPanel({
               <DeviceHealthPanel
                 manageNotifications={manageNotifications}
                 onSetManageNotifications={onSetManageNotifications}
+                isFireOs={isFireOs}
               />
               {deviceProfile?.isTelevision && <NetworkPrivacyPanel />}
             </>
@@ -743,11 +748,13 @@ export function AdminPanel({
                 <button onClick={onRefreshKiosk} className="text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)] text-sm" style={{ fontWeight: 500 }}>Refresh status</button>
               </div>
               <p className="text-[oklch(70.8%_0_0)] text-sm mb-6" style={{ fontWeight: 400 }}>
-                For devices not managed by ArborXR. Make OpenPanel the home launcher and a device admin, then lock the device into the kiosk.
+                {isFireOs
+                  ? "Fire OS standalone kiosk uses the Home redirect, accessibility protection, and approved device access."
+                  : "For unmanaged devices, make OpenPanel the home launcher and a device admin, then lock the device into the kiosk."}
               </p>
 
               {/* Management mode */}
-              <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-5 mb-6">
+              {!isFireOs && <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-5 mb-6">
                 <div className="text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>Management mode</div>
                 <div className="text-[oklch(70.8%_0_0)] text-sm mb-4" style={{ fontWeight: 400 }}>
                   Standalone = OpenPanel locks the device itself. Companion = ArborXR manages lockdown.
@@ -774,26 +781,25 @@ export function AdminPanel({
                     <Monitor className="w-4 h-4" /> Companion (ArborXR)
                   </button>
                 </div>
-              </div>
+              </div>}
 
               {/* Setup steps */}
               <div className="space-y-3 mb-6">
                 {[
                   {
-                    label: kioskStatus?.homeControlMode?.startsWith("fire-")
+                    label: isFireOs
                       ? "Fire OS Home redirect"
                       : "Set OpenPanel as Home launcher",
                     ok: !!kioskStatus?.defaultLauncher || kioskStatus?.homeControlMode === "fire-redirect",
-                    action: kioskStatus?.homeControlMode?.startsWith("fire-")
+                    action: isFireOs
                       ? () => { void SystemBridge.openAccessibilitySettings(); }
                       : onSetDefaultLauncher,
-                    actionLabel: kioskStatus?.homeControlMode?.startsWith("fire-") ? "Enable" : "Choose",
-                    hint: kioskStatus?.homeControlMode?.startsWith("fire-")
+                    actionLabel: isFireOs ? "Enable" : "Choose",
+                    hint: isFireOs
                       ? "Fire OS keeps its protected launcher; OpenPanel intercepts Home through accessibility."
                       : undefined as string | undefined,
                   },
                   { label: "Enable OpenPanel device admin", ok: !!kioskStatus?.deviceAdmin, action: onRequestDeviceAdmin, actionLabel: "Enable", hint: undefined as string | undefined },
-                  { label: "Device Owner (silent full lockdown)", ok: !!kioskStatus?.deviceOwner, action: undefined, actionLabel: undefined, hint: "Set by ArborXR, by adb, or by the provisioning QR below — an installed app can't promote itself" },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between p-4 bg-[oklch(26.9%_0_0)] rounded-lg">
                     <div className="flex items-center gap-3 min-w-0">
@@ -818,23 +824,24 @@ export function AdminPanel({
                 ))}
               </div>
 
-              {/* Permissions & special app access (Fully-style). Auto-granted where
-                  the device owner can; the rest deep-link the Settings screen.
-                  Also hosts the on-device provisioning QR when not yet owner. */}
+              {/* Permissions & special app access (Fully-style). Managed-device
+                  grants can be automatic; the rest deep-link to Settings. */}
               <div className="mb-6">
                 <div className="text-[oklch(98.5%_0_0)] mb-3" style={{ fontWeight: 500 }}>Permissions &amp; device access</div>
                 <PermissionsManager />
               </div>
 
               {/* Lock / unlock */}
-              {kioskStatus?.lockTaskActive ? (
+              {kioskActive ? (
                 <button
                   onClick={() => void runKioskAction(onUnlockKiosk)}
                   disabled={kioskActionBusy}
                   className="w-full flex items-center justify-center gap-3 py-4 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/30 transition-colors"
                   style={{ fontWeight: 500 }}
                 >
-                  <Unlock className="w-5 h-5" /> Unlock kiosk ({kioskStatus.lockTaskMode})
+                  <Unlock className="w-5 h-5" /> {isFireOs
+                    ? "Disable Fire kiosk"
+                    : `Unlock kiosk (${kioskStatus?.lockTaskMode ?? "none"})`}
                 </button>
               ) : (
                 <button
@@ -843,7 +850,7 @@ export function AdminPanel({
                   className="w-full flex items-center justify-center gap-3 py-4 bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)] rounded-lg hover:bg-[oklch(48.8%_0.243_264.376)]/80 transition-colors"
                   style={{ fontWeight: 500 }}
                 >
-                  <Lock className="w-5 h-5" /> Lock device into kiosk
+                  <Lock className="w-5 h-5" /> {isFireOs ? "Enable Fire kiosk" : "Lock device into kiosk"}
                 </button>
               )}
 
@@ -853,7 +860,7 @@ export function AdminPanel({
                 </p>
               )}
 
-              {kioskStatus?.deviceOwner && (
+              {!isFireOs && kioskStatus?.deviceOwner && (
                 <button
                   onClick={onClearDeviceOwner}
                   className="w-full mt-3 flex items-center justify-center gap-3 py-3 bg-[oklch(63.7%_0.237_25.331)]/15 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/25 transition-colors text-sm"
@@ -867,7 +874,9 @@ export function AdminPanel({
                 <div className="mt-4 flex items-start gap-3 p-4 bg-[oklch(70.4%_0.191_22.216)]/10 border border-[oklch(70.4%_0.191_22.216)]/30 rounded-lg">
                   <ShieldCheck className="w-5 h-5 text-[oklch(70.4%_0.191_22.216)] shrink-0 mt-0.5" />
                   <p className="text-[oklch(87%_0_0)] text-sm" style={{ fontWeight: 400 }}>
-                    Without Device Owner, OpenPanel uses Android screen pinning. It's a real lock but can be exited by holding Back + Overview. For tamper-resistant lockdown, provision OpenPanel as Device Owner via ADB/QR before handing over the device.
+                    {isFireOs
+                      ? "This Fire kiosk keeps Home returning to OpenPanel and blocks the notification shade through the approved accessibility service. Complete every permission row above for the strongest Fire-safe setup."
+                      : "Standalone Android uses screen pinning when the device is not fully managed. Advanced managed-device provisioning is documented in the OpenPanel GitHub repository."}
                   </p>
                 </div>
               )}

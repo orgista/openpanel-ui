@@ -6,12 +6,17 @@ import { OpenPanelBrand } from "./OpenPanelBrand";
 interface ModeSetupProps {
   onChoose: (mode: AppMode) => void;
   isTelevision?: boolean;
+  isFireOs?: boolean;
 }
 
 // First-run prompt: "Do you use ArborXR?" decides whether OpenPanel runs as a
 // companion (ArborXR manages lockdown) or standalone (OpenPanel locks the
 // device itself). Shown once, then persisted.
-export function ModeSetup({ onChoose, isTelevision = false }: ModeSetupProps) {
+export function ModeSetup({
+  onChoose,
+  isTelevision = false,
+  isFireOs = false,
+}: ModeSetupProps) {
   const StandaloneIcon = isTelevision ? Tv : Smartphone;
 
   return (
@@ -28,32 +33,37 @@ export function ModeSetup({ onChoose, isTelevision = false }: ModeSetupProps) {
           <OpenPanelBrand iconClassName="size-14" wordmarkClassName="text-4xl" />
         </div>
         <p className="text-[oklch(70.8%_0_0)] text-center mb-10 text-lg" style={{ fontWeight: 400 }}>
-          How is this device managed?
+          {isFireOs ? "Fire OS standalone kiosk" : "How is this device managed?"}
         </p>
 
-        <div className="grid grid-cols-2 gap-5">
-          <button
-            autoFocus
-            onClick={() => onChoose("companion")}
-            className="text-left p-7 bg-[oklch(20.5%_0_0)] rounded-2xl border border-[oklch(26.9%_0_0)] hover:border-[oklch(48.8%_0.243_264.376)] transition-colors"
-          >
-            <Monitor className="w-9 h-9 text-[oklch(48.8%_0.243_264.376)] mb-4" />
-            <div className="text-[oklch(98.5%_0_0)] text-xl mb-2" style={{ fontWeight: 500 }}>I use ArborXR</div>
-            <div className="text-[oklch(70.8%_0_0)] text-sm" style={{ fontWeight: 400 }}>
-              ArborXR is the device owner and handles kiosk lockdown. OpenPanel is just the launcher.
-            </div>
-          </button>
+        <div className={`grid gap-5 ${isFireOs ? "grid-cols-1 max-w-xl mx-auto" : "grid-cols-2"}`}>
+          {!isFireOs && (
+            <button
+              autoFocus
+              onClick={() => onChoose("companion")}
+              className="text-left p-7 bg-[oklch(20.5%_0_0)] rounded-2xl border border-[oklch(26.9%_0_0)] hover:border-[oklch(48.8%_0.243_264.376)] transition-colors"
+            >
+              <Monitor className="w-9 h-9 text-[oklch(48.8%_0.243_264.376)] mb-4" />
+              <div className="text-[oklch(98.5%_0_0)] text-xl mb-2" style={{ fontWeight: 500 }}>I use ArborXR</div>
+              <div className="text-[oklch(70.8%_0_0)] text-sm" style={{ fontWeight: 400 }}>
+                ArborXR is the device owner and handles kiosk lockdown. OpenPanel is just the launcher.
+              </div>
+            </button>
+          )}
 
           <button
+            autoFocus={isFireOs}
             onClick={() => onChoose("standalone")}
             className="text-left p-7 bg-[oklch(20.5%_0_0)] rounded-2xl border border-[oklch(26.9%_0_0)] hover:border-[oklch(48.8%_0.243_264.376)] transition-colors"
           >
             <StandaloneIcon className="w-9 h-9 text-[oklch(48.8%_0.243_264.376)] mb-4" />
             <div className="text-[oklch(98.5%_0_0)] text-xl mb-2" style={{ fontWeight: 500 }}>
-              {isTelevision ? "Standalone TV" : "Standalone"}
+              {isFireOs ? "Use Fire standalone" : isTelevision ? "Standalone TV" : "Standalone"}
             </div>
             <div className="text-[oklch(70.8%_0_0)] text-sm" style={{ fontWeight: 400 }}>
-              {isTelevision
+              {isFireOs
+                ? "OpenPanel uses the Fire Home redirect and approved kiosk access without managed-device enrollment."
+                : isTelevision
                 ? "No ArborXR. OpenPanel becomes the TV home launcher; kiosk controls remain available in Admin."
                 : "No ArborXR. OpenPanel becomes the home launcher and locks the device into kiosk mode itself."}
             </div>
@@ -61,7 +71,7 @@ export function ModeSetup({ onChoose, isTelevision = false }: ModeSetupProps) {
         </div>
 
         <p className="text-[oklch(55.6%_0_0)] text-center mt-8 text-sm" style={{ fontWeight: 400 }}>
-          You can change this later in the Admin Panel.
+          {isFireOs ? "This mode is selected automatically on Fire tablets." : "You can change this later in the Admin Panel."}
         </p>
       </motion.div>
     </div>

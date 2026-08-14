@@ -24,6 +24,7 @@ interface DeviceHealthPanelProps {
   onSetManageNotifications: (enabled: boolean) => void;
   autoApply?: boolean;
   setupMode?: boolean;
+  isFireOs?: boolean;
 }
 
 const buttonClass =
@@ -48,6 +49,7 @@ export function DeviceHealthPanel({
   onSetManageNotifications,
   autoApply = false,
   setupMode = false,
+  isFireOs = false,
 }: DeviceHealthPanelProps) {
   const [health, setHealth] = useState<DeviceHealthSnapshot | null>(null);
   const [apps, setApps] = useState<DebloatApp[]>([]);
@@ -224,14 +226,22 @@ export function DeviceHealthPanel({
             : <ShieldAlert className="size-5 shrink-0 mt-0.5 text-[oklch(75%_0.16_70)]" />}
           <div>
             <p className="text-[oklch(94%_0_0)]" style={{ fontWeight: 500 }}>
-              {health?.canManageApps ? "Device Owner controls available" : health?.arborXrManaged ? "Managed by ArborXR" : "Device Owner required"}
+              {isFireOs
+                ? "Fire standalone app policy"
+                : health?.canManageApps
+                  ? "Managed-device controls available"
+                  : health?.arborXrManaged
+                    ? "Managed by ArborXR"
+                    : "Read-only recommendations"}
             </p>
             <p className="text-sm text-[oklch(72%_0_0)] mt-1">
-              {health?.canManageApps
+              {isFireOs
+                ? "OpenPanel reports reviewed Fire packages here. Apply or restore the documented ADB package list from an authorized workstation."
+                : health?.canManageApps
                 ? "OpenPanel uses Android's on-device management APIs. Changes are tracked and reversible."
                 : health?.arborXrManaged
                   ? "OpenPanel cannot override ArborXR's Device Policy Controller. Mirror this policy in ArborXR."
-                  : "An Android app cannot run ADB against its own device. Provision OpenPanel as Device Owner for silent, on-device management."}
+                  : "An installed Android app cannot grant itself managed-device authority. Follow the repository provisioning guide when stronger policy control is required."}
             </p>
           </div>
         </div>

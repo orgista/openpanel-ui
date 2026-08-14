@@ -218,6 +218,73 @@ describe("AdminPanel", () => {
     expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>[\s\S]*?Companion \(ArborXR\)<\/button>/);
   });
 
+  it("shows only the redirect kiosk path on Fire OS", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        deviceProfile={{
+          deviceType: "tablet",
+          isTelevision: false,
+          isTablet: true,
+          isHandheld: false,
+          isFireOs: true,
+          hasLeanback: false,
+          hasTouchscreen: true,
+          hasDpad: false,
+          hasHardwareKeyboard: false,
+          smallestScreenWidthDp: 600,
+          hasBattery: true,
+          remoteUi: false,
+          touchUi: true,
+          showBattery: true,
+          supportsLeanbackApps: false,
+          voiceInputAvailable: false,
+          controllerName: null,
+        }}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={{
+          deviceOwner: false,
+          deviceAdmin: true,
+          arborXrManaged: false,
+          defaultLauncher: false,
+          homeControlMode: "fire-redirect",
+          lockTaskActive: false,
+          lockTaskMode: "none",
+          managementMode: "standalone",
+          kioskEnabled: true,
+        }}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="kiosk"
+      />,
+    );
+
+    expect(html).toContain("Fire OS standalone kiosk");
+    expect(html).toContain("Disable Fire kiosk");
+    expect(html).not.toContain("ArborXR");
+    expect(html).not.toContain("Device Owner");
+    expect(html).not.toContain("provisioning QR");
+  });
+
   it("exposes standards-based Books & Audio management", () => {
     const html = renderToStaticMarkup(
       <AdminPanel

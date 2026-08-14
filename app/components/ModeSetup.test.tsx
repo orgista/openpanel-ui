@@ -4,6 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 import { ModeSetup } from "./ModeSetup";
 
 describe("ModeSetup", () => {
+  it("never offers ArborXR management on Fire OS", () => {
+    const html = renderToStaticMarkup(
+      <ModeSetup isFireOs onChoose={vi.fn()} />,
+    );
+
+    expect(html).toContain("Fire OS standalone kiosk");
+    expect(html).not.toContain("ArborXR");
+    expect(html).not.toContain("Companion");
+  });
+
   it("uses the shared OpenPanel brand and television-specific standalone copy", () => {
     const html = renderToStaticMarkup(
       <ModeSetup isTelevision onChoose={vi.fn()} />,

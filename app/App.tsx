@@ -39,6 +39,7 @@ import { installDpadNavigation } from "./native/dpadNavigation";
 import { recordDiagnostic } from "./native/diagnostics";
 import { LibraryBridge, type LibraryPublication } from "./native/LibraryBridge";
 import { LibraryCatalogBrowser } from "./components/LibraryCatalogBrowser";
+import { OpenPanelBrand } from "./components/OpenPanelBrand";
 
 export interface ContentItem {
   id: string;
@@ -183,11 +184,14 @@ export default function App() {
   const adminReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const [appMode, setAppMode] = useState<AppMode>(getAppMode());
+  const [managementResolved, setManagementResolved] = useState(false);
   // Decided after first-run detection (see effect below); a stored choice wins.
   const [needsModeSetup, setNeedsModeSetup] = useState(false);
   // Standalone first-run only: gate the panel behind the onboarding wizard until
   // the operator has set a PIN, granted permissions, and picked apps.
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(
+    () => getAppMode() === "standalone" && !isStandaloneOnboarded(),
+  );
   const [youtubeItems, setYouTubeItems] = useState<KioskYouTubeItem[]>(initializeApprovedYouTubeItems());
   const [browsingYouTubeChannel, setBrowsingYouTubeChannel] = useState<KioskYouTubeItem | null>(null);
   const [playingYouTube, setPlayingYouTube] = useState<KioskYouTubeItem | null>(null);
@@ -196,6 +200,7 @@ export default function App() {
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | null>(null);
   const isStandalone = appMode === "standalone";
+  const panelReady = managementResolved && !needsModeSetup && !needsOnboarding;
 
   useEffect(() => installKeyboardViewportTracking(), []);
   useEffect(
@@ -204,16 +209,15 @@ export default function App() {
   );
 
   const chooseAppMode = useCallback((mode: AppMode) => {
-    if (mode === appMode) {
-      setNeedsModeSetup(false);
-      return;
-    }
+    // Persist even when the choice matches the in-memory default. Previously,
+    // choosing companion mode could appear to work but prompt again next boot.
     persistAppMode(mode);
     setAppMode(mode);
     setNeedsModeSetup(false);
+    setManagementResolved(true);
     // Fresh standalone setups run the onboarding wizard before the panel.
-    if (mode === "standalone" && !isStandaloneOnboarded()) setNeedsOnboarding(true);
-  }, [appMode]);
+    setNeedsOnboarding(mode === "standalone" && !isStandaloneOnboarded());
+  }, []);
 
   // Onboarding's app picker reports the apps the operator left unchecked; hide
   // exactly those. Everything else (including apps installed later) shows by
@@ -354,12 +358,6 @@ export default function App() {
     }
   }, [appMode]);
 
-  // Refresh the panel's app list the moment onboarding finishes so the curated
-  // selection appears immediately (the 60s poll would otherwise lag).
-  useEffect(() => {
-    if (!needsOnboarding) void loadApps();
-  }, [needsOnboarding, loadApps]);
-
   const refreshStatus = useCallback(async () => {
     try {
       const [bat, wf, bt] = await Promise.all([
@@ -409,6 +407,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!panelReady) return;
     loadApps();
     loadLibrary();
     refreshStatus();
@@ -446,7 +445,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", onResume);
       void batteryListener?.remove();
     };
-  }, [loadApps, loadLibrary, refreshStatus]);
+  }, [loadApps, loadLibrary, panelReady, refreshStatus]);
 
   const handleLaunch = async (item: ContentItem) => {
     if (item.libraryAction === "browse") {
@@ -504,12 +503,24 @@ export default function App() {
     if (isStandalone) refreshKiosk();
   }, [isStandalone, refreshKiosk]);
 
-  // First run only: auto-detect ArborXR (it's the Device Owner) and pick
-  // companion silently — no prompt. If the device isn't ArborXR-managed, show
-  // the setup prompt. Once a choice is stored, it always wins (admin can change
-  // it later in the Kiosk tab).
+  // Fire OS always uses OpenPanel's standalone Home/accessibility kiosk path.
+  // Other devices retain a stored choice; on first run ArborXR ownership is
+  // detected before the management prompt is shown.
   useEffect(() => {
-    if (isAppModeConfigured()) return;
+    if (!deviceProfile) return;
+    if (deviceProfile.isFireOs) {
+      setNeedsModeSetup(false);
+      if (appMode !== "standalone" || !isAppModeConfigured()) {
+        chooseAppMode("standalone");
+      } else {
+        setManagementResolved(true);
+      }
+      return;
+    }
+    if (isAppModeConfigured()) {
+      setManagementResolved(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -519,10 +530,13 @@ export default function App() {
       } catch (e) {
         console.error("Management detection failed", e);
       }
-      if (!cancelled) setNeedsModeSetup(true);
+      if (!cancelled) {
+        setNeedsModeSetup(true);
+        setManagementResolved(true);
+      }
     })();
     return () => { cancelled = true; };
-  }, [chooseAppMode]);
+  }, [appMode, chooseAppMode, deviceProfile]);
 
   useEffect(() => {
     lastActivityRef.current = Date.now();
@@ -819,6 +833,7 @@ export default function App() {
         <ModeSetup
           onChoose={chooseAppMode}
           isTelevision={deviceProfile?.isTelevision === true}
+          isFireOs={deviceProfile?.isFireOs === true}
         />
       )}
 
@@ -829,6 +844,17 @@ export default function App() {
           onSetManageNotifications={setManageNotifications}
           onComplete={finishOnboarding}
         />
+      )}
+
+      {!managementResolved && !needsModeSetup && (
+        <div
+          data-dpad-scope
+          data-input-mode={deviceProfile?.remoteUi ? "remote" : "detecting"}
+          className="fixed inset-0 z-[350] flex flex-col items-center justify-center gap-5 bg-black"
+        >
+          <OpenPanelBrand iconClassName="size-16" wordmarkClassName="text-5xl" />
+          <p className="text-lg text-[oklch(65%_0_0)]">Checking device management…</p>
+        </div>
       )}
 
       <style>{`
