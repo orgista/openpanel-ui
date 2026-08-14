@@ -1,7 +1,43 @@
 import type { AppMode } from "../appConfig";
 import type { InstalledApp } from "./SystemBridge";
 
-const EXCLUDED = new Set(["app.xrdm.client", "app.revanced.android.gms"]);
+/**
+ * Packages that may remain installed for administration, recovery, updates, or
+ * escaped-link handling but must never become child-facing OpenPanel tiles.
+ * Keep this exact-name list aligned with native LaunchableAppCatalog.
+ */
+const EXCLUDED = new Set([
+  "app.xrdm.client",
+  "app.revanced.android.gms",
+  "com.android.chrome",
+  "com.android.vending",
+  "com.amazon.venezia",
+  "com.aurora.store",
+  "com.bbk.appstore",
+  "com.brave.browser",
+  "com.chrome.beta",
+  "com.chrome.canary",
+  "com.chrome.dev",
+  "com.duckduckgo.mobile.android",
+  "com.heytap.market",
+  "com.huawei.appmarket",
+  "com.kiwibrowser.browser",
+  "com.microsoft.emmx",
+  "com.opera.browser",
+  "com.opera.mini.native",
+  "com.oppo.market",
+  "com.sec.android.app.samsungapps",
+  "com.teslacoilsw.launcher",
+  "com.tcl.appmarket2",
+  "com.vivaldi.browser",
+  "com.xiaomi.mipicks",
+  "dnsfilter.android",
+  "moe.shizuku.privileged.api",
+  "org.fdroid.fdroid",
+  "org.mozilla.firefox",
+  "org.mozilla.fenix",
+  "org.mozilla.focus",
+]);
 const SUPPORTED_SYSTEM_APPS = new Set([
   "com.netflix.mediaclient",
   "com.netflix.ninja",

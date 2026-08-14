@@ -58,6 +58,22 @@ describe("isAllowedApp", () => {
     expect(isAllowedApp(app({ packageName: "app.xrdm.client" }), "standalone")).toBe(false);
   });
 
+  it("never exposes app stores, browsers, or admin utilities to children", () => {
+    [
+      "com.aurora.store",
+      "org.fdroid.fdroid",
+      "com.android.vending",
+      "com.amazon.venezia",
+      "org.mozilla.firefox",
+      "com.android.chrome",
+      "dnsfilter.android",
+      "moe.shizuku.privileged.api",
+      "com.teslacoilsw.launcher",
+    ].forEach((packageName) => {
+      expect(isAllowedApp(app({ packageName }), "standalone")).toBe(false);
+    });
+  });
+
   it("falls back to launchable user apps when Companion mode is stale", () => {
     const installed = [
       app({ packageName: "com.example.one" }),

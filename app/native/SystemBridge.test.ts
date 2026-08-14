@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { SystemBridge } from "./SystemBridge";
 
 describe("SystemBridge web fallback", () => {
+  it("keeps store and admin packages installed in the preview inventory", async () => {
+    const { apps } = await SystemBridge.getInstalledApps();
+    expect(apps.map((app) => app.packageName)).toEqual(expect.arrayContaining([
+      "com.aurora.store",
+      "org.fdroid.fdroid",
+      "dnsfilter.android",
+      "moe.shizuku.privileged.api",
+    ]));
+  });
+
   it("supports an atomic kiosk exit to the standard system launcher", async () => {
     await expect(SystemBridge.exitKioskToSystemHome()).resolves.toMatchObject({
       exited: true,

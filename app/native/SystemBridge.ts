@@ -515,6 +515,10 @@ const webMock: SystemBridgePlugin = {
       apps: [
         { packageName: "com.example.one", label: "Sample Game", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
         { packageName: "com.example.two", label: "Another Game", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
+        { packageName: "com.aurora.store", label: "Aurora Store", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
+        { packageName: "org.fdroid.fdroid", label: "F-Droid", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
+        { packageName: "dnsfilter.android", label: "personalDNSfilter", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
+        { packageName: "moe.shizuku.privileged.api", label: "Shizuku", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
       ],
     };
   },
