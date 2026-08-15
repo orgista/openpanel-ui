@@ -18,6 +18,7 @@ import {
   type DeviceHealthActionResult,
   type DeviceHealthSnapshot,
 } from "../native/SystemBridge";
+import { ToggleSwitch } from "./ToggleSwitch";
 
 interface DeviceHealthPanelProps {
   manageNotifications: boolean;
@@ -265,20 +266,12 @@ export function DeviceHealthPanel({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={manageNotifications}
-          aria-label="Block app notifications"
+        <ToggleSwitch
+          checked={manageNotifications}
+          onChange={() => void toggleNotifications()}
+          ariaLabel="Block app notifications"
           disabled={busyKey !== null}
-          onClick={() => void toggleNotifications()}
-          className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${manageNotifications
-            ? "border-[oklch(48.8%_0.243_264.376)] bg-[oklch(48.8%_0.243_264.376)]"
-            : "border-[oklch(55.6%_0_0)] bg-[oklch(20.5%_0_0)]"}`}
-        >
-          <span className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white transition-transform ${manageNotifications ? "translate-x-8" : "translate-x-1"}`} />
-          <span className="sr-only">{manageNotifications ? "On" : "Off"}</span>
-        </button>
+        />
       </div>
 
       <div className="flex flex-wrap gap-3">

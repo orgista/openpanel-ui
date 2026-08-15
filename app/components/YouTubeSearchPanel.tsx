@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Check, Loader2, Mic, Plus, Search, ShieldCheck, Youtube } from "lucide-react";
+import { Check, Loader2, Mic, Plus, Search, Youtube } from "lucide-react";
 
 import type { KioskYouTubeItem } from "../native/youtube";
 import { dismissSoftKeyboard } from "../native/keyboard";
@@ -114,12 +114,9 @@ export function YouTubeSearchPanel({ approvedItems, deviceProfile, onAdd }: YouT
             Add a YouTube channel
           </div>
           <p className="text-[oklch(65%_0_0)] text-sm mt-1">
-            Enter a channel name, unique @handle, channel ID, or channel URL. OpenPanel fills in the canonical URL and verifies the channel before it can be added.
+            Enter a channel name, @handle, channel ID, or URL. OpenPanel finds the channel and checks it before adding.
           </p>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[oklch(18%_0_0)] text-[oklch(78%_0.13_142)] text-xs">
-          <ShieldCheck className="w-3.5 h-3.5" /> No API key
-        </span>
       </div>
 
       <div className="youtube-search-controls flex min-w-0 gap-2">
@@ -162,7 +159,7 @@ export function YouTubeSearchPanel({ approvedItems, deviceProfile, onAdd }: YouT
       </div>
 
       <p id="youtube-channel-hint" className="mt-2 text-xs text-[oklch(58%_0_0)]">
-        Channel names are tried as an exact handle match. If the name and handle differ, enter the channel's unique @handle.
+        If a channel name doesn't match, enter its @handle instead.
       </p>
       {deviceProfile?.remoteUi && (
         <p id="youtube-remote-mic-hint" className="mt-2 text-xs text-[oklch(62%_0_0)]">

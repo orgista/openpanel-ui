@@ -457,11 +457,11 @@ describe("AdminPanel", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Allowed YouTube Sources (0)");
     expect(html).toContain("Add a YouTube channel");
-    expect(html).toContain("No API key");
+    expect(html).not.toContain("No API key");
     expect(html).toContain('aria-label="Enter channel by voice"');
     expect(html).toContain("press your remote&#x27;s microphone button");
     expect(html).toContain("Verify channel");
-    expect(html).toContain("channel name, unique @handle, channel ID, or channel URL");
+    expect(html).toContain("channel name, @handle, channel ID, or URL");
     expect(html).toContain("Paste a YouTube link");
     expect(html).toContain("youtube.com video, playlist, or channel URL");
     expect(html).not.toContain("YouTube Data API key");

@@ -11,6 +11,7 @@ import { dismissSoftKeyboard } from "../native/keyboard";
 import { clearDiagnostics, getDiagnostics, type DiagnosticEntry } from "../native/diagnostics";
 import { DeviceHealthPanel } from "./DeviceHealthPanel";
 import { LibraryManager } from "./LibraryManager";
+import { ToggleSwitch } from "./ToggleSwitch";
 import { NetworkPrivacyPanel } from "./NetworkPrivacyPanel";
 
 interface App {
@@ -457,19 +458,11 @@ export function AdminPanel({
                   <p className="text-base text-[oklch(98%_0_0)]" style={{ fontWeight: 600 }}>Show Books &amp; Audio on Home</p>
                   <p className="mt-1 text-sm text-[oklch(68%_0_0)]">Hidden by default. Enable it only after adding approved books, audio, or catalogs.</p>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={libraryEnabled}
-                  aria-label="Show Books and Audio on Home"
-                  onClick={() => onSetLibraryEnabled(!libraryEnabled)}
-                  className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${libraryEnabled
-                    ? "border-[oklch(48.8%_0.243_264.376)] bg-[oklch(48.8%_0.243_264.376)]"
-                    : "border-[oklch(55.6%_0_0)] bg-[oklch(20.5%_0_0)]"}`}
-                >
-                  <span className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white transition-transform ${libraryEnabled ? "translate-x-8" : "translate-x-1"}`} />
-                  <span className="sr-only">{libraryEnabled ? "On" : "Off"}</span>
-                </button>
+                <ToggleSwitch
+                  checked={libraryEnabled}
+                  onChange={onSetLibraryEnabled}
+                  ariaLabel="Show Books and Audio on Home"
+                />
               </div>
               <LibraryManager onLibraryChanged={onLibraryChanged} />
             </div>
@@ -479,7 +472,7 @@ export function AdminPanel({
             <div>
               <h3 className="text-xl text-[oklch(98.5%_0_0)] mb-2" style={{ fontWeight: 500 }}>YouTube Videos, Channels &amp; Playlists</h3>
               <p className="text-[oklch(70.8%_0_0)] text-sm mb-6" style={{ fontWeight: 400 }}>
-                Each approved source appears as one tile and plays inside OpenPanel's restricted player. Channel tiles show that channel's uploads feed.
+                Each approved video, channel, or playlist shows as one tile and plays inside OpenPanel. Channel tiles show that channel's latest videos.
               </p>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border border-[oklch(43.9%_0_0)] bg-[oklch(26.9%_0_0)] p-4 sm:p-5 mb-6">
@@ -491,25 +484,11 @@ export function AdminPanel({
                     Let viewers choose another video from the same approved channel when playback ends. Turn this off to return to OpenPanel instead.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={allowSameChannelRecommendations}
-                  aria-label="Allow same-channel YouTube recommendations"
-                  onClick={() => onSetAllowSameChannelRecommendations(!allowSameChannelRecommendations)}
-                  className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${
-                    allowSameChannelRecommendations
-                      ? "border-[oklch(48.8%_0.243_264.376)] bg-[oklch(48.8%_0.243_264.376)]"
-                      : "border-[oklch(55.6%_0_0)] bg-[oklch(20.5%_0_0)]"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white transition-transform ${
-                      allowSameChannelRecommendations ? "translate-x-8" : "translate-x-1"
-                    }`}
-                  />
-                  <span className="sr-only">{allowSameChannelRecommendations ? "On" : "Off"}</span>
-                </button>
+                <ToggleSwitch
+                  checked={allowSameChannelRecommendations}
+                  onChange={onSetAllowSameChannelRecommendations}
+                  ariaLabel="Allow same-channel YouTube recommendations"
+                />
               </div>
 
               <YouTubeSearchPanel
