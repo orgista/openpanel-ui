@@ -352,12 +352,30 @@ export default function App() {
         migratedArtRef.current.add(item.id);
         const channelId = channelIdForYouTubeItem(item);
         if (!channelId || !item.thumbnailUrl) continue;
-        const inline = await inlineChannelArt(item.thumbnailUrl);
+        // Stored URL first; if it rotted, re-resolve the channel for fresh art.
+        let inline = await inlineChannelArt(item.thumbnailUrl);
+        let title = item.title;
+        if (!inline) {
+          try {
+            const { channel } = await SystemBridge.resolveYouTubeChannel({ input: channelId });
+            if (channel?.thumbnailUrl) {
+              inline = await inlineChannelArt(channel.thumbnailUrl);
+              if (channel.title) title = channel.title;
+            }
+          } catch (error) {
+            recordDiagnostic("warning", "Channel art repair could not resolve channel", {
+              channelId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         if (!inline) {
           migratedArtRef.current.delete(item.id); // retry on a later pass
+          recordDiagnostic("warning", "Channel art could not be fetched natively", { channelId });
           continue;
         }
-        if (addYouTubeItem(`https://www.youtube.com/channel/${channelId}`, item.title, inline)) {
+        if (addYouTubeItem(`https://www.youtube.com/channel/${channelId}`, title, inline)) {
+          recordDiagnostic("info", "Channel art stored inline", { channelId });
           changed = true;
         }
       }
