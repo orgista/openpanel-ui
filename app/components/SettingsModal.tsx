@@ -1,8 +1,10 @@
 import { motion, AnimatePresence } from "motion/react";
-import { X, Wifi, Bluetooth, LogOut, Shield, RefreshCw, ExternalLink, Loader2, Lock, LayoutGrid } from "lucide-react";
+import { X, Wifi, Bluetooth, LogOut, Shield, RefreshCw, ExternalLink, Loader2, Lock, LayoutGrid, Plus } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AdminAuth } from "./AdminAuth";
-import { SystemBridge, type WifiNetwork, type BtDevice } from "../native/SystemBridge";
+import { SystemBridge, type WifiNetwork, type BtDevice, type DeviceProfile } from "../native/SystemBridge";
+import { recordDiagnostic } from "../native/diagnostics";
+import { dismissSoftKeyboard } from "../native/keyboard";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -13,6 +15,7 @@ interface SettingsModalProps {
   onEnterAdmin: () => void;
   onExitAdmin: () => void;
   onOpenAdminPanel: () => void;
+  deviceProfile?: DeviceProfile | null;
   initialTab?: "wifi" | "bluetooth";
   onNetworkChange?: () => void;
 }
@@ -24,6 +27,45 @@ type ConnectState =
   | { phase: "pending-approval"; ssid: string }
   | { phase: "failed"; ssid: string; message: string };
 
+type SettingsFooterAction = "adminMode" | "adminPanel" | "exitAdmin" | "exitKiosk" | "systemSettings";
+
+export function wifiSignalLabel(signal: number): "Excellent" | "Good" | "Fair" | "Weak" {
+  if (signal >= 75) return "Excellent";
+  if (signal >= 50) return "Good";
+  if (signal >= 25) return "Fair";
+  return "Weak";
+}
+
+type SettingsTabDownDestination = "browse" | "body" | "footer";
+
+export function settingsTabDownTarget({
+  activeTab,
+  usesTvWifiPicker,
+  wifiListVisible,
+  browseDisabled,
+  hasBodyControl,
+}: {
+  activeTab: "wifi" | "bluetooth";
+  usesTvWifiPicker: boolean;
+  wifiListVisible: boolean;
+  browseDisabled: boolean;
+  hasBodyControl: boolean;
+}): SettingsTabDownDestination {
+  if (activeTab === "wifi" && usesTvWifiPicker && !wifiListVisible) return "footer";
+  if (!browseDisabled) return "browse";
+  if (hasBodyControl) return "body";
+  return "footer";
+}
+
+const settingsBodyFocusableSelector = [
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -33,6 +75,7 @@ export function SettingsModal({
   onEnterAdmin,
   onExitAdmin,
   onOpenAdminPanel,
+  deviceProfile,
   initialTab = "wifi",
   onNetworkChange,
 }: SettingsModalProps) {
@@ -42,6 +85,8 @@ export function SettingsModal({
   const [networks, setNetworks] = useState<WifiNetwork[]>([]);
   const [wifiScanning, setWifiScanning] = useState(false);
   const [wifiError, setWifiError] = useState<string | null>(null);
+  const [fireWifi, setFireWifi] = useState<{ connected: boolean; ssid?: string }>({ connected: false });
+  const [wifiListExpanded, setWifiListExpanded] = useState(false);
   const [connect, setConnect] = useState<ConnectState>({ phase: "idle" });
   const [password, setPassword] = useState("");
 
@@ -53,6 +98,95 @@ export function SettingsModal({
   const [pairingAddress, setPairingAddress] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tabRefs = useRef<Partial<Record<typeof activeTab, HTMLButtonElement | null>>>({});
+  const browseNetworksRef = useRef<HTMLButtonElement | null>(null);
+  const settingsBodyRef = useRef<HTMLDivElement | null>(null);
+  const footerRefs = useRef<Partial<Record<SettingsFooterAction, HTMLButtonElement | null>>>({});
+  const canOpenFullSystemSettings = isAdmin
+    && (isStandalone || deviceProfile?.isTablet === true);
+  const footerOrder: SettingsFooterAction[] = isAdmin
+    ? [
+        "adminPanel",
+        "exitAdmin",
+        ...(isStandalone ? ["exitKiosk"] as const : []),
+        ...(canOpenFullSystemSettings ? ["systemSettings"] as const : []),
+      ]
+    : ["adminMode"];
+  const usesTvWifiPicker = deviceProfile?.isTelevision === true;
+  const legacyTelevision = usesTvWifiPicker && (deviceProfile?.sdk ?? 999) <= 28;
+  const usesFireWifiSettings = deviceProfile?.isFireOs === true;
+  const wifiListVisible = !usesTvWifiPicker || wifiListExpanded;
+
+  const settingsBodyFocusableElements = () => Array.from(
+    settingsBodyRef.current?.querySelectorAll<HTMLElement>(settingsBodyFocusableSelector) ?? [],
+  ).filter((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+
+  const focusFirstFooterAction = () => {
+    const first = footerOrder[0];
+    if (first) footerRefs.current[first]?.focus();
+  };
+
+  const handleFooterKeyDown = (
+    action: SettingsFooterAction,
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      browseNetworksRef.current?.focus();
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const index = footerOrder.indexOf(action);
+    const offset = event.key === "ArrowLeft" ? -1 : 1;
+    const next = footerOrder[Math.min(footerOrder.length - 1, Math.max(0, index + offset))];
+    if (!next || next === action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    footerRefs.current[next]?.focus();
+    footerRefs.current[next]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+
+  const handleSettingsBodyKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowUp") return;
+    const [first] = settingsBodyFocusableElements();
+    if (!first || document.activeElement !== first) return;
+    event.preventDefault();
+    event.stopPropagation();
+    browseNetworksRef.current?.focus();
+  };
+
+  const handleSettingsTabKeyDown = (
+    tab: "wifi" | "bluetooth",
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      const [firstBodyControl] = settingsBodyFocusableElements();
+      const destination = settingsTabDownTarget({
+        activeTab,
+        usesTvWifiPicker,
+        wifiListVisible,
+        browseDisabled: wifiScanning || btScanning || (activeTab === "wifi" && usesFireWifiSettings),
+        hasBodyControl: !!firstBodyControl,
+      });
+      if (destination === "browse") browseNetworksRef.current?.focus();
+      else if (destination === "body") firstBodyControl?.focus();
+      else focusFirstFooterAction();
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const next = event.key === "ArrowLeft" ? "wifi" : "bluetooth";
+    if (next === tab) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveTab(next);
+    tabRefs.current[next]?.focus();
+  };
 
   const scanWifi = useCallback(async () => {
     setWifiScanning(true);
@@ -68,6 +202,25 @@ export function SettingsModal({
     }
   }, []);
 
+  const openFireWifiSettings = useCallback(async () => {
+    if (!isAdmin) return;
+    setWifiError(null);
+    try {
+      await SystemBridge.openWifiSettings();
+    } catch (e: any) {
+      setWifiError(e?.message || "Could not open Fire OS Wi-Fi settings");
+    }
+  }, [isAdmin]);
+
+  const loadFireWifiStatus = useCallback(async () => {
+    try {
+      const status = await SystemBridge.getWifiStatus();
+      setFireWifi({ connected: status.connected, ssid: status.ssid });
+    } catch {
+      setFireWifi({ connected: false });
+    }
+  }, []);
+
   const loadBluetooth = useCallback(async () => {
     setBtError(null);
     try {
@@ -75,6 +228,11 @@ export function SettingsModal({
       setBtEnabled(status.enabled);
       if (!status.available) {
         setBtError("Bluetooth is not available on this device");
+        setBtDevices([]);
+        return;
+      }
+      if (status.permissionGranted === false) {
+        setBtError("Bluetooth permission is required. Select Scan for devices to grant access.");
         setBtDevices([]);
         return;
       }
@@ -124,20 +282,41 @@ export function SettingsModal({
     }
   }, []);
 
+  const openFullSystemSettings = useCallback(async () => {
+    recordDiagnostic("info", "Full Android settings requested", {
+      deviceType: deviceProfile?.deviceType ?? "unknown",
+      managementMode: isStandalone ? "standalone" : "companion",
+    });
+    try {
+      await SystemBridge.openSystemSettings();
+      recordDiagnostic("info", "Full Android settings launch accepted");
+    } catch (error) {
+      console.error("Could not open full Android settings", error);
+    }
+  }, [deviceProfile?.deviceType, isStandalone]);
+
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
       setConnect({ phase: "idle" });
       setPassword("");
       setShowAdminAuth(false);
+      setWifiListExpanded(false);
     }
   }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (!isOpen) return;
-    if (activeTab === "wifi") scanWifi();
+    if (activeTab === "wifi" && usesFireWifiSettings) void loadFireWifiStatus();
+    else if (activeTab === "wifi" && wifiListVisible) scanWifi();
     if (activeTab === "bluetooth") loadBluetooth();
-  }, [isOpen, activeTab, scanWifi, loadBluetooth]);
+  }, [isOpen, activeTab, wifiListVisible, usesFireWifiSettings, scanWifi, loadBluetooth, loadFireWifiStatus]);
+
+  useEffect(() => {
+    if (!isOpen || showAdminAuth) return;
+    const focusTimer = window.setTimeout(() => tabRefs.current[activeTab]?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [activeTab, isOpen, showAdminAuth]);
 
   // System dialogs (Wi-Fi/Bluetooth enable, settings panels) background the
   // WebView, which throttles JS timers — so re-sync state when we return to
@@ -146,26 +325,36 @@ export function SettingsModal({
     if (!isOpen) return;
     const onResume = () => {
       if (document.visibilityState !== "visible") return;
-      if (activeTab === "wifi") scanWifi();
-      else loadBluetooth();
+      if (activeTab === "wifi") {
+        if (usesFireWifiSettings) void loadFireWifiStatus();
+        else if (wifiListVisible) scanWifi();
+      } else {
+        loadBluetooth();
+      }
       onNetworkChange?.();
     };
     document.addEventListener("visibilitychange", onResume);
     return () => document.removeEventListener("visibilitychange", onResume);
-  }, [isOpen, activeTab, scanWifi, loadBluetooth, onNetworkChange]);
+  }, [isOpen, activeTab, wifiListVisible, usesFireWifiSettings, scanWifi, loadBluetooth, loadFireWifiStatus, onNetworkChange]);
 
   // The adapter can settle into on/off well after the user taps the system
   // dialog — this native event fires exactly then, so the toggle never goes stale.
   useEffect(() => {
     let handle: { remove: () => void } | undefined;
+    let cancelled = false;
     SystemBridge.addListener("bluetoothStateChanged", ({ enabled }) => {
       setBtEnabled(enabled);
       setBtToggling(false);
       if (enabled) loadBluetooth();
       else setBtDevices([]);
       onNetworkChange?.();
-    }).then(h => { handle = h; });
-    return () => handle?.remove();
+    }).then(h => {
+      handle = h;
+      // The effect may have been cleaned up before addListener resolved;
+      // remove immediately so the native listener isn't leaked/duplicated.
+      if (cancelled) h.remove();
+    });
+    return () => { cancelled = true; handle?.remove(); };
   }, [loadBluetooth, onNetworkChange]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
@@ -182,6 +371,7 @@ export function SettingsModal({
 
   const submitConnect = async (ssid: string, pass: string) => {
     if (!isAdmin) return; // joining a network is an admin-only action
+    await dismissSoftKeyboard();
     setConnect({ phase: "connecting", ssid });
     try {
       const res = await SystemBridge.connectWifi({ ssid, password: pass });
@@ -252,43 +442,62 @@ export function SettingsModal({
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={legacyTelevision ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-[oklch(14.5%_0_0)]/80 backdrop-blur-xl z-50 flex items-center justify-center"
+        transition={legacyTelevision ? { duration: 0 } : undefined}
+        data-dpad-scope
+        data-legacy-tv={legacyTelevision ? "true" : "false"}
+        className={`settings-modal-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 z-50 flex items-center justify-center ${legacyTelevision ? "" : "backdrop-blur-xl"}`}
         onClick={showAdminAuth ? undefined : onClose}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (showAdminAuth) setShowAdminAuth(false);
+          else onClose();
+        }}
       >
         <motion.div
-          initial={{ opacity: 0, y: 50 }}
+          initial={legacyTelevision ? false : { opacity: 0, y: 50 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 50 }}
+          transition={legacyTelevision ? { duration: 0 } : undefined}
           onClick={(e) => e.stopPropagation()}
-          className="bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-4xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
+          className="settings-modal-card bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-4xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
         >
           {showAdminAuth ? (
             <div className="flex-1 overflow-y-auto">
-              <div className="min-h-full p-8 flex items-center justify-center">
+              <div className="admin-auth-shell min-h-full p-8 flex items-center justify-center">
                 <AdminAuth
                   onAuthenticated={() => { onEnterAdmin(); setShowAdminAuth(false); }}
                   onCancel={() => setShowAdminAuth(false)}
+                  remoteMode={!!deviceProfile?.remoteUi}
+                  controllerName={deviceProfile?.controllerName}
+                  hasHardwareKeyboard={!!deviceProfile?.hasHardwareKeyboard}
                 />
               </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
+              <div className="settings-modal-header shrink-0 flex items-center justify-between p-8 border-b border-[oklch(26.9%_0_0)]">
                 <h2 className="text-3xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>Settings</h2>
                 <button
+                  type="button"
                   onClick={onClose}
-                  className="p-2 hover:bg-[oklch(26.9%_0_0)] rounded-lg transition-colors"
+                  className="p-2 hover:bg-[oklch(26.9%_0_0)] rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                  aria-label="Close settings"
+                  title="Close settings"
                 >
                   <X className="w-6 h-6 text-[oklch(70.8%_0_0)]" />
                 </button>
               </div>
 
-              <div className="flex items-center gap-4 p-8 border-b border-[oklch(26.9%_0_0)]">
+              <div className="settings-modal-tabs shrink-0 flex items-center gap-4 p-8 border-b border-[oklch(26.9%_0_0)]">
                 <button
+                  ref={(element) => { tabRefs.current.wifi = element; }}
                   onClick={() => setActiveTab("wifi")}
+                  onKeyDown={(event) => handleSettingsTabKeyDown("wifi", event)}
                   className={`flex items-center gap-3 px-6 py-3 rounded-lg transition-colors ${
                     activeTab === "wifi"
                       ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -300,7 +509,9 @@ export function SettingsModal({
                   Wi-Fi
                 </button>
                 <button
+                  ref={(element) => { tabRefs.current.bluetooth = element; }}
                   onClick={() => setActiveTab("bluetooth")}
+                  onKeyDown={(event) => handleSettingsTabKeyDown("bluetooth", event)}
                   className={`flex items-center gap-3 px-6 py-3 rounded-lg transition-colors ${
                     activeTab === "bluetooth"
                       ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
@@ -314,21 +525,108 @@ export function SettingsModal({
 
                 <div className="flex-1" />
 
-                <button
-                  onClick={() => (activeTab === "wifi" ? scanWifi() : scanBluetooth())}
-                  disabled={wifiScanning || btScanning}
+                {!(activeTab === "wifi" && usesFireWifiSettings) && <button
+                  ref={browseNetworksRef}
+                  onClick={() => {
+                    if (activeTab === "wifi") {
+                      if (usesFireWifiSettings) void openFireWifiSettings();
+                      else if (wifiListVisible) scanWifi();
+                      else setWifiListExpanded(true);
+                    } else {
+                      scanBluetooth();
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      tabRefs.current[activeTab]?.focus();
+                      return;
+                    }
+                    if (event.key !== "ArrowDown") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const [firstBodyControl] = settingsBodyFocusableElements();
+                    if (firstBodyControl) firstBodyControl.focus();
+                    else focusFirstFooterAction();
+                  }}
+                  disabled={wifiScanning || btScanning || (activeTab === "wifi" && usesFireWifiSettings && !isAdmin)}
+                  aria-expanded={activeTab === "wifi" && !usesFireWifiSettings ? wifiListVisible : undefined}
                   className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)] transition-colors disabled:opacity-50"
                   style={{ fontWeight: 500 }}
                 >
                   {(activeTab === "wifi" ? wifiScanning : btScanning)
                     ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <RefreshCw className="w-4 h-4" />}
-                  {activeTab === "bluetooth" && !btScanning ? "Scan for devices" : "Refresh"}
-                </button>
+                    : usesFireWifiSettings && activeTab === "wifi"
+                      ? <ExternalLink className="w-4 h-4" />
+                      : <RefreshCw className="w-4 h-4" />}
+                  {activeTab === "wifi"
+                    ? (usesFireWifiSettings
+                        ? "Open Fire Wi-Fi settings"
+                        : (wifiListVisible ? "Refresh networks" : "Browse networks"))
+                    : (!btScanning ? "Scan for devices" : "Scanning")}
+                </button>}
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8">
-                {activeTab === "wifi" && (
+              <div
+                ref={settingsBodyRef}
+                onKeyDownCapture={handleSettingsBodyKeyDownCapture}
+                className="settings-modal-body min-h-0 flex-1 overflow-y-auto p-8"
+              >
+                {activeTab === "wifi" && usesFireWifiSettings && (
+                  <div className="fire-wifi-panel mx-auto w-full max-w-3xl">
+                    <div className="rounded-xl border border-[oklch(38%_0_0)] bg-[oklch(23%_0_0)] p-5">
+                      <div className="mb-4 flex items-center gap-3">
+                        <Wifi className="size-7 text-[oklch(65%_0.19_255)]" />
+                        <p className="text-2xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 600 }}>Wi-Fi</p>
+                      </div>
+                      <div className="mb-3 flex min-h-14 items-center gap-4 rounded-xl border border-[oklch(36%_0_0)] bg-[oklch(18%_0_0)] px-4 py-3 text-left">
+                        <Wifi className={`size-5 shrink-0 ${fireWifi.connected ? "text-[oklch(65%_0.19_255)]" : "text-[oklch(58%_0_0)]"}`} />
+                        <div className="min-w-0">
+                          <p className="truncate text-base text-[oklch(94%_0_0)]" style={{ fontWeight: 500 }}>
+                            {fireWifi.connected && fireWifi.ssid ? `Connected to ${fireWifi.ssid}` : "Not connected"}
+                          </p>
+                          <p className="text-sm text-[oklch(62%_0_0)]">Saved networks stay in Fire OS.</p>
+                        </div>
+                      </div>
+                      {wifiError && (
+                        <div className="mb-4 p-3 bg-[oklch(63.7%_0.237_25.331)]/10 border border-[oklch(63.7%_0.237_25.331)]/30 rounded-lg text-[oklch(70.4%_0.191_22.216)] text-sm">
+                          {wifiError}
+                        </div>
+                      )}
+                      <button
+                        ref={browseNetworksRef}
+                        type="button"
+                        onClick={() => void openFireWifiSettings()}
+                        disabled={!isAdmin}
+                        className="flex min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-[oklch(48.8%_0.243_264.376)] px-5 py-3 text-base text-white transition-colors hover:brightness-110 disabled:bg-[oklch(29%_0_0)] disabled:text-[oklch(58%_0_0)]"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <span className="relative"><Wifi className="size-5" /><Plus className="absolute -bottom-1 -right-1 size-3.5" /></span>
+                        Add a network
+                      </button>
+                      <p className="mt-2 text-center text-sm text-[oklch(62%_0_0)]">
+                        {isAdmin ? "Opens Fire OS Wi-Fi." : "Enter Admin Mode to add or change a network."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "wifi" && !usesFireWifiSettings && usesTvWifiPicker && !wifiListVisible && (
+                  <div className="h-full min-h-48 flex items-center justify-center text-center">
+                    <div className="max-w-lg">
+                      <Wifi className="w-9 h-9 mx-auto mb-4 text-[oklch(55.6%_0_0)]" />
+                      <p className="text-[oklch(87%_0_0)] mb-2" style={{ fontWeight: 500 }}>
+                        Wi-Fi network list is collapsed
+                      </p>
+                      <p className="text-[oklch(55.6%_0_0)] text-sm">
+                        Select Browse networks to scan and navigate available Wi-Fi. Leave it collapsed to move directly to Admin Mode.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "wifi" && !usesFireWifiSettings && wifiListVisible && (
                   <div className="space-y-3">
                     {wifiError && (
                       <div className="p-4 bg-[oklch(63.7%_0.237_25.331)]/10 border border-[oklch(63.7%_0.237_25.331)]/30 rounded-lg text-[oklch(70.4%_0.191_22.216)] text-sm">
@@ -336,28 +634,53 @@ export function SettingsModal({
                       </div>
                     )}
                     {wifiScanning && networks.length === 0 && (
-                      <div className="flex items-center justify-center gap-3 p-8 text-[oklch(55.6%_0_0)]">
+                      <div aria-live="polite" className="flex items-center justify-center gap-3 p-8 text-[oklch(55.6%_0_0)]">
                         <Loader2 className="w-5 h-5 animate-spin" /> Scanning for networks…
                       </div>
                     )}
                     {networks.map((network) => (
                       <div
                         key={network.ssid}
-                        className="p-5 bg-[oklch(26.9%_0_0)] rounded-lg border border-[oklch(26.9%_0_0)] hover:border-[oklch(43.9%_0_0)] transition-colors"
+                        className="p-5 bg-[oklch(26.9%_0_0)] rounded-lg border border-[oklch(26.9%_0_0)] hover:border-[oklch(43.9%_0_0)] focus-within:border-white/70 focus-within:ring-4 focus-within:ring-white/80 transition-colors"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <Wifi className="w-5 h-5 text-[oklch(70.8%_0_0)]" />
-                            <div>
-                              <div className="text-[oklch(98.5%_0_0)] text-lg flex items-center gap-2" style={{ fontWeight: 400 }}>
-                                {network.ssid}
-                                {network.secured && <Lock className="w-3.5 h-3.5 text-[oklch(55.6%_0_0)]" />}
-                              </div>
-                              <div className="text-[oklch(55.6%_0_0)] text-sm" style={{ fontWeight: 400 }}>
-                                {network.secured ? "Secured" : "Open"} • Signal: {network.signal}%
+                          {!network.connected && isAdmin && connect.phase !== "connecting" ? (
+                            <button
+                              type="button"
+                              onClick={() => startConnect(network)}
+                              aria-label={`Connect to ${network.ssid}, ${network.secured ? "secured" : "open"}, ${wifiSignalLabel(network.signal)} signal`}
+                              className="-m-2 flex min-w-0 flex-1 items-center justify-between gap-4 rounded-lg p-2 text-left focus:outline-none"
+                            >
+                              <span className="flex min-w-0 items-center gap-4">
+                                <Wifi className="w-5 h-5 shrink-0 text-[oklch(70.8%_0_0)]" />
+                                <span className="min-w-0">
+                                  <span className="flex items-center gap-2 truncate text-lg text-[oklch(98.5%_0_0)]" style={{ fontWeight: 400 }}>
+                                    {network.ssid}
+                                    {network.secured && <Lock className="w-3.5 h-3.5 shrink-0 text-[oklch(55.6%_0_0)]" />}
+                                  </span>
+                                  <span className="block text-sm text-[oklch(55.6%_0_0)]" style={{ fontWeight: 400 }}>
+                                    {network.secured ? "Secured" : "Open"} • {wifiSignalLabel(network.signal)} signal ({network.signal}%)
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded-lg bg-[oklch(48.8%_0.243_264.376)] px-4 py-2 text-sm text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>
+                                Connect
+                              </span>
+                            </button>
+                          ) : (
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                              <Wifi className="w-5 h-5 shrink-0 text-[oklch(70.8%_0_0)]" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 truncate text-lg text-[oklch(98.5%_0_0)]" style={{ fontWeight: 400 }}>
+                                  {network.ssid}
+                                  {network.secured && <Lock className="w-3.5 h-3.5 shrink-0 text-[oklch(55.6%_0_0)]" />}
+                                </div>
+                                <div className="text-[oklch(55.6%_0_0)] text-sm" style={{ fontWeight: 400 }}>
+                                  {network.secured ? "Secured" : "Open"} • {wifiSignalLabel(network.signal)} signal ({network.signal}%)
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )}
                           <div className="flex gap-3">
                             {network.connected ? (
                               <>
@@ -378,15 +701,7 @@ export function SettingsModal({
                               <span className="flex items-center gap-2 text-[oklch(70.8%_0_0)] text-sm px-4 py-2" style={{ fontWeight: 500 }}>
                                 <Loader2 className="w-4 h-4 animate-spin" /> Connecting…
                               </span>
-                            ) : isAdmin ? (
-                              <button
-                                onClick={() => startConnect(network)}
-                                className="px-4 py-2 bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)] rounded-lg hover:bg-[oklch(48.8%_0.243_264.376)]/80 transition-colors text-sm"
-                                style={{ fontWeight: 500 }}
-                              >
-                                Connect
-                              </button>
-                            ) : (
+                            ) : !isAdmin ? (
                               <span
                                 className="flex items-center gap-1.5 text-[oklch(55.6%_0_0)] text-sm px-4 py-2"
                                 style={{ fontWeight: 500 }}
@@ -394,7 +709,7 @@ export function SettingsModal({
                               >
                                 <Lock className="w-3.5 h-3.5" /> Admin only
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
@@ -405,10 +720,12 @@ export function SettingsModal({
                           >
                             <input
                               type="password"
-                              autoFocus
+                              autoFocus={!deviceProfile?.remoteUi}
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
                               placeholder="Network password"
+                              autoComplete="current-password"
+                              enterKeyHint="go"
                               className="flex-1 px-4 py-2.5 bg-[oklch(14.5%_0_0)] border border-[oklch(43.9%_0_0)] rounded-lg text-[oklch(98.5%_0_0)] placeholder:text-[oklch(43.9%_0_0)] outline-none focus:border-[oklch(48.8%_0.243_264.376)]"
                             />
                             <button
@@ -461,6 +778,19 @@ export function SettingsModal({
                     ))}
                     {!wifiScanning && networks.length === 0 && !wifiError && (
                       <div className="text-center p-8 text-[oklch(55.6%_0_0)]">No networks found</div>
+                    )}
+                    {usesTvWifiPicker && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWifiListExpanded(false);
+                          window.setTimeout(() => browseNetworksRef.current?.focus(), 0);
+                        }}
+                        className="w-full px-5 py-3 bg-[oklch(26.9%_0_0)] text-[oklch(87%_0_0)] rounded-lg border border-[oklch(43.9%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80"
+                        style={{ fontWeight: 500 }}
+                      >
+                        Done browsing networks
+                      </button>
                     )}
                   </div>
                 )}
@@ -602,11 +932,13 @@ export function SettingsModal({
                 )}
               </div>
 
-              <div className="border-t border-[oklch(26.9%_0_0)] p-8 flex gap-4 items-center">
+              <div className="settings-modal-footer shrink-0 border-t border-[oklch(26.9%_0_0)] p-8 flex gap-4 items-center">
                 {isAdmin ? (
                   <>
                     <button
+                      ref={(element) => { footerRefs.current.adminPanel = element; }}
                       onClick={onOpenAdminPanel}
+                      onKeyDown={(event) => handleFooterKeyDown("adminPanel", event)}
                       className="flex items-center gap-3 px-6 py-4 bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)] rounded-lg hover:bg-[oklch(48.8%_0.243_264.376)]/80 transition-colors"
                       style={{ fontWeight: 500 }}
                     >
@@ -614,7 +946,9 @@ export function SettingsModal({
                       Admin Panel
                     </button>
                     <button
+                      ref={(element) => { footerRefs.current.exitAdmin = element; }}
                       onClick={onExitAdmin}
+                      onKeyDown={(event) => handleFooterKeyDown("exitAdmin", event)}
                       className="flex items-center gap-3 px-6 py-4 bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] rounded-lg hover:bg-[oklch(43.9%_0_0)] transition-colors"
                       style={{ fontWeight: 500 }}
                     >
@@ -624,7 +958,9 @@ export function SettingsModal({
                   </>
                 ) : (
                   <button
+                    ref={(element) => { footerRefs.current.adminMode = element; }}
                     onClick={() => setShowAdminAuth(true)}
+                    onKeyDown={(event) => handleFooterKeyDown("adminMode", event)}
                     className="flex items-center gap-3 px-6 py-4 bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] rounded-lg hover:bg-[oklch(43.9%_0_0)] transition-colors"
                     style={{ fontWeight: 500 }}
                   >
@@ -636,7 +972,9 @@ export function SettingsModal({
                 {/* Standalone-only: exiting the kiosk requires admin auth first. */}
                 {isStandalone && isAdmin && (
                   <button
+                    ref={(element) => { footerRefs.current.exitKiosk = element; }}
                     onClick={onExitKiosk}
+                    onKeyDown={(event) => handleFooterKeyDown("exitKiosk", event)}
                     className="flex items-center gap-3 px-6 py-4 bg-[oklch(63.7%_0.237_25.331)]/20 text-[oklch(70.4%_0.191_22.216)] rounded-lg hover:bg-[oklch(63.7%_0.237_25.331)]/30 transition-colors"
                     style={{ fontWeight: 500 }}
                   >
@@ -647,18 +985,21 @@ export function SettingsModal({
 
                 <div className="flex-1" />
 
-                {/* System settings is an escape vector. On ArborXR-managed
-                    (companion) devices the Device Owner blocks launching Android
-                    Settings, so this silently does nothing — only show it in
-                    standalone mode, where OpenPanel manages the device. */}
-                {isAdmin && isStandalone && (
+                {/* Authenticated standalone admins need the complete Android
+                    Settings surface for maintenance such as authorizing ADB.
+                    Companion TVs keep this hidden because their DPC owns the
+                    allowed settings surface. */}
+                {canOpenFullSystemSettings && (
                   <button
-                    onClick={() => (activeTab === "wifi" ? SystemBridge.openWifiSettings() : SystemBridge.openBluetoothSettings())}
+                    ref={(element) => { footerRefs.current.systemSettings = element; }}
+                    onClick={openFullSystemSettings}
+                    onKeyDown={(event) => handleFooterKeyDown("systemSettings", event)}
+                    aria-label="Open full Android system settings"
                     className="flex items-center gap-2 px-5 py-4 text-[oklch(55.6%_0_0)] hover:text-[oklch(87%_0_0)] transition-colors text-sm"
                     style={{ fontWeight: 500 }}
                   >
                     <ExternalLink className="w-4 h-4" />
-                    System settings
+                    Full system settings
                   </button>
                 )}
               </div>

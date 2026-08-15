@@ -42,3 +42,27 @@ export function isAppModeConfigured(): boolean {
     return false;
   }
 }
+
+const STANDALONE_ONBOARDED_KEY = "openpanel.standalone.onboarded.v1";
+
+/**
+ * Whether the standalone first-run onboarding (admin PIN, permissions, app
+ * selection) has been completed. Only relevant in standalone mode; companion
+ * devices are configured entirely by ArborXR.
+ */
+export function isStandaloneOnboarded(): boolean {
+  try {
+    return localStorage.getItem(STANDALONE_ONBOARDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setStandaloneOnboarded(done: boolean): void {
+  try {
+    if (done) localStorage.setItem(STANDALONE_ONBOARDED_KEY, "1");
+    else localStorage.removeItem(STANDALONE_ONBOARDED_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}

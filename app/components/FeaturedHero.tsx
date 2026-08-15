@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Play, Star } from "lucide-react";
+import { BookOpen, Headphones, Library, ListVideo, Play, Star } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { ContentItem } from "../App";
 
 interface FeaturedHeroProps {
   item: ContentItem;
   onLaunch: () => void;
+  remoteMode?: boolean;
 }
 
 const formatDuration = (dur?: string) => {
@@ -18,7 +20,19 @@ const formatDuration = (dur?: string) => {
   return dur;
 };
 
-export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
+export function FeaturedHero({ item, onLaunch, remoteMode = false }: FeaturedHeroProps) {
+  const initialButtonRef = useRef<HTMLButtonElement>(null);
+  const initialFocusApplied = useRef(false);
+
+  useEffect(() => {
+    if (!remoteMode || initialFocusApplied.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (!initialButtonRef.current) return;
+      initialButtonRef.current.focus({ preventScroll: true });
+      initialFocusApplied.current = true;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [remoteMode]);
 
   return (
     <AnimatePresence mode="wait">
@@ -133,14 +147,30 @@ export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
               className="flex gap-3"
             >
               <motion.button
+                ref={initialButtonRef}
+                data-dpad-initial={remoteMode ? "true" : undefined}
                 onClick={onLaunch}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 className="flex items-center gap-2.5 px-7 py-3.5 bg-[oklch(98%_0_0)] text-[oklch(11%_0_0)] rounded-md transition-colors hover:bg-[oklch(90%_0_0)]"
                 style={{ fontWeight: 600, fontSize: "0.9375rem" }}
               >
-                <Play className="w-5 h-5" fill="currentColor" />
-                {item.isVideo ? "Play" : "Open"}
+                {item.libraryAction === "browse" ? (
+                  <Library className="w-5 h-5" />
+                ) : item.libraryPublication ? (
+                  item.libraryPublication.format === "audiobook" || item.libraryPublication.format === "audio"
+                    ? <Headphones className="w-5 h-5" />
+                    : <BookOpen className="w-5 h-5" />
+                ) : item.youtubeItem?.kind === "channel" ? (
+                  <ListVideo className="w-5 h-5" />
+                ) : (
+                  <Play className="w-5 h-5" fill="currentColor" />
+                )}
+                {item.libraryAction === "browse"
+                  ? "Browse"
+                  : item.libraryPublication
+                    ? item.libraryPublication.format === "audiobook" || item.libraryPublication.format === "audio" ? "Listen" : "Read"
+                    : item.youtubeItem?.kind === "channel" ? "Explore" : item.youtubeItem ? "Play" : "Open"}
               </motion.button>
             </motion.div>
           </div>

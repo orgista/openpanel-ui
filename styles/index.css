@@ -8,3 +8,308 @@ select,
 textarea {
   scroll-margin-block: 5rem;
 }
+
+.openpanel-shell,
+.settings-modal-body,
+.admin-panel-body {
+  scrollbar-color: oklch(38% 0 0) transparent;
+  scrollbar-width: thin;
+}
+
+.openpanel-shell::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-modal-body::-webkit-scrollbar,
+.admin-panel-body::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.settings-modal-body::-webkit-scrollbar-thumb,
+.admin-panel-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: oklch(38% 0 0);
+}
+
+/* The Castillo TCL's Android 9 compositor is especially sensitive to large
+   blurred layers and simultaneous layout transitions. Keep the same visual
+   hierarchy while making remote focus changes immediate on legacy TVs. */
+[data-legacy-tv="true"] .settings-modal-card,
+[data-legacy-tv="true"] .admin-panel-card,
+[data-legacy-tv="true"] .admin-panel-header,
+[data-legacy-tv="true"] .admin-panel-tabs,
+[data-legacy-tv="true"] .admin-panel-body,
+[data-legacy-tv="true"] .youtube-search-panel {
+  transition: none !important;
+}
+
+.settings-modal-backdrop[data-legacy-tv="true"],
+.admin-panel-backdrop[data-legacy-tv="true"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Ease the size/padding shifts when the soft keyboard opens or closes so the
+   modal settles smoothly instead of snapping. (Backdrop alignment itself can't
+   be transitioned; keeping the card bounded to the VisualViewport height below
+   keeps its top — header/close — on screen throughout.) */
+.settings-modal-card,
+.admin-panel-card {
+  transition: max-height 200ms ease, border-radius 200ms ease;
+}
+.admin-panel-header,
+.admin-panel-tabs,
+.admin-panel-body,
+.youtube-search-panel {
+  transition: padding 200ms ease, margin 200ms ease;
+}
+
+/* Android 14 WebView can briefly report the full layout height while Gboard
+   animates in. The runtime marker follows VisualViewport, keeping the modal
+   bounded to the actually usable space throughout that transition. */
+html.soft-keyboard-open .settings-modal-backdrop,
+html.soft-keyboard-open .admin-panel-backdrop {
+  align-items: flex-start;
+  padding: 0.25rem;
+  overflow-y: auto;
+}
+
+html.soft-keyboard-open .settings-modal-card,
+html.soft-keyboard-open .admin-panel-card {
+  max-height: calc(var(--openpanel-viewport-height, 100dvh) - 0.5rem);
+  border-radius: 0.75rem;
+}
+
+html.soft-keyboard-open .admin-panel-header {
+  padding: 0.625rem 1rem;
+}
+
+html.soft-keyboard-open .admin-panel-tabs {
+  padding: 0.625rem 1rem;
+}
+
+html.soft-keyboard-open .admin-panel-body {
+  padding: 0.75rem 1rem;
+}
+
+html.soft-keyboard-open .youtube-search-panel {
+  margin-bottom: 0.75rem;
+  padding: 0.875rem;
+}
+
+html.soft-keyboard-open input:focus,
+html.soft-keyboard-open textarea:focus,
+html.soft-keyboard-open select:focus {
+  scroll-margin-block: 1rem;
+}
+
+/* Android's landscape keyboard leaves this tablet only ~464px of WebView
+   height. Keep authentication and admin controls visible in that short
+   viewport while preserving the spacious TV/tablet layout otherwise. */
+@media (max-height: 600px) {
+  .settings-modal-backdrop,
+  .admin-panel-backdrop {
+    align-items: flex-start;
+    padding: 0;
+    height: 100dvh;
+  }
+
+  .settings-modal-card,
+  .admin-panel-card {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .admin-auth-shell {
+    min-height: 0;
+    padding: 0.5rem 1rem;
+    align-items: center;
+  }
+
+  .admin-auth-intro {
+    margin-bottom: 0.375rem;
+  }
+
+  .pin-entry-card,
+  .admin-auth-card {
+    padding: 0.75rem 1rem;
+  }
+
+  .admin-auth-card {
+    /* Keep the recovery card compact when Gboard shrinks a landscape
+       WebView. The former 44rem two-column card felt oversized and caused
+       awkward horizontal focus jumps with a TV remote. */
+    max-width: 32rem;
+  }
+
+  .admin-auth-copy-heading,
+  .admin-auth-copy-description {
+    margin-bottom: 0.5rem;
+  }
+
+  .admin-auth-form > label {
+    margin-bottom: 0.25rem;
+  }
+
+  .admin-auth-form > select {
+    margin-bottom: 0.5rem;
+    padding-block: 0.5rem;
+  }
+
+  .admin-auth-form > input {
+    margin-block: 0 0.75rem;
+    padding-block: 0.5rem;
+  }
+
+  .admin-auth-actions button {
+    padding-block: 0.5rem;
+  }
+
+  /* The global five-rem field margin helps ordinary forms, but in the
+     keyboard-height Admin card it makes WebView auto-scroll the focused
+     recovery answer far enough to hide the title. The full card already fits
+     in this compact layout, so only a small focus margin is needed here. */
+  .admin-auth-card input,
+  .admin-auth-card select {
+    scroll-margin-block: 0.5rem;
+  }
+
+  .pin-entry-title {
+    margin-bottom: 0.375rem;
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+
+  .pin-entry-digits {
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .pin-entry-digit {
+    width: 3rem;
+    height: 3rem;
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+
+  .pin-keypad {
+    gap: 0.5rem;
+    max-width: 19rem;
+  }
+
+  .pin-keypad-key {
+    min-height: 3.5rem;
+  }
+
+  .pin-entry-cancel {
+    min-height: 3rem;
+  }
+
+  .admin-panel-header {
+    padding: 0.5rem 1rem;
+  }
+
+  .admin-panel-tabs {
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .admin-panel-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-panel-tabs > button {
+    display: flex;
+    flex: 0 0 auto;
+    min-height: 3.25rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    white-space: nowrap;
+  }
+
+  .admin-panel-tabs > button svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  .admin-panel-body {
+    padding: 0.875rem 1rem 1.25rem;
+    overscroll-behavior: contain;
+  }
+
+  .admin-panel-header h2,
+  .settings-modal-header h2 {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+
+  .settings-modal-header {
+    padding: 0.625rem 1rem;
+  }
+
+  .settings-modal-tabs {
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+  }
+
+  .settings-modal-tabs > button {
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0.625rem 1rem;
+  }
+
+  .settings-modal-tabs > button:last-of-type {
+    padding-inline: 0.875rem;
+  }
+
+  .settings-modal-body {
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  .settings-modal-footer {
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .settings-modal-footer::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-modal-footer button {
+    flex: 0 0 auto;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .settings-modal-footer button svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .settings-modal-header > button,
+  .admin-panel-header > button {
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  .fire-wifi-panel > div {
+    padding: 1rem;
+  }
+
+  .device-health-panel {
+    gap: 1rem;
+  }
+}
