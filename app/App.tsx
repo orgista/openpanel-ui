@@ -685,7 +685,7 @@ export default function App() {
         data-device-type={deviceProfile?.deviceType ?? "detecting"}
         data-legacy-tv={legacyTelevision ? "true" : "false"}
         data-input-mode={deviceProfile?.remoteUi ? "remote" : deviceProfile?.touchUi ? "touch" : "detecting"}
-        className="openpanel-shell size-full bg-[oklch(11%_0_0)] overflow-y-auto overflow-x-hidden relative"
+        className="openpanel-shell size-full min-h-dvh bg-[oklch(11%_0_0)] overflow-y-auto overflow-x-hidden relative"
         style={televisionCanvasStyle(televisionScale)}
       >
       {/* Sleep Screen */}

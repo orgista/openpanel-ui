@@ -2,6 +2,15 @@
 @import './tailwind.css';
 @import './theme.css';
 
+/* Dark ground everywhere so short content (e.g. no apps assigned) never
+   exposes the browser's default white below the app shell. */
+html,
+body,
+#root {
+  min-height: 100%;
+  background-color: oklch(11% 0 0);
+}
+
 /* Keep focused fields clear of the soft keyboard when the viewport resizes. */
 input,
 select,
