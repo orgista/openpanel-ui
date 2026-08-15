@@ -187,6 +187,7 @@ export interface DnsFilterStatus {
 interface SystemBridgePlugin {
   writeDiagnostic(opts: { level: "info" | "warning" | "error"; message: string }): Promise<void>;
   hideKeyboard(): Promise<void>;
+  showKeyboard(): Promise<void>;
   setKeepScreenOn(opts: { enabled: boolean }): Promise<void>;
   setLegacyTvCompatRendering(opts: { enabled: boolean }): Promise<{
     applied: boolean;
@@ -363,6 +364,7 @@ const webActionResult = (message: string, changed = 0): DeviceHealthActionResult
 const webMock: SystemBridgePlugin = {
   async writeDiagnostic() {},
   async hideKeyboard() {},
+  async showKeyboard() {},
   async setKeepScreenOn() {},
   async setLegacyTvCompatRendering({ enabled }) {
     return { applied: false, enabled };

@@ -49,10 +49,19 @@ export function installKeyboardViewportTracking(): () => void {
     });
   };
 
+  const onFocusIn = (event: FocusEvent) => {
+    if (isEditableTextTarget(event.target)) {
+      // WebView won't raise the IME for programmatic focus(); force it so the
+      // keyboard opens on every admin field, not only on a manual re-tap.
+      void SystemBridge.showKeyboard().catch(() => undefined);
+    }
+    update();
+  };
+
   viewport?.addEventListener("resize", update);
   viewport?.addEventListener("scroll", update);
   window.addEventListener("resize", update);
-  document.addEventListener("focusin", update);
+  document.addEventListener("focusin", onFocusIn);
   document.addEventListener("focusout", update);
   document.addEventListener("dblclick", preventSelectionPopup, true);
   document.addEventListener("selectstart", preventSelectionPopup, true);
@@ -62,7 +71,7 @@ export function installKeyboardViewportTracking(): () => void {
     viewport?.removeEventListener("resize", update);
     viewport?.removeEventListener("scroll", update);
     window.removeEventListener("resize", update);
-    document.removeEventListener("focusin", update);
+    document.removeEventListener("focusin", onFocusIn);
     document.removeEventListener("focusout", update);
     document.removeEventListener("dblclick", preventSelectionPopup, true);
     document.removeEventListener("selectstart", preventSelectionPopup, true);

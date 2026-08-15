@@ -3,19 +3,19 @@ import { describe, expect, it } from "vitest";
 import { STARTUP_ANIMATION_FALLBACK_MS, StartupAnimation } from "./StartupAnimation";
 
 describe("StartupAnimation", () => {
-  it("renders the approved muted inline launch video", () => {
+  it("renders the OpenPanel wordmark splash (name only, no logo, no video)", () => {
     const html = renderToStaticMarkup(<StartupAnimation onComplete={() => {}} />);
 
-    expect(html).toContain("data-openpanel-startup=\"true\"");
-    expect(html).toContain("data-openpanel-startup-video=\"true\"");
-    expect(html).toContain("autoplay");
-    expect(html).toContain("muted");
-    expect(html).toContain("playsinline");
-    expect(html).toContain("openpanel-launch.mp4");
+    expect(html).toContain('data-openpanel-startup="true"');
+    expect(html).toContain('aria-label="OpenPanel by Orgista"');
+    expect(html).toContain("OpenPanel");
+    expect(html).not.toContain("openpanel-launch.mp4");
+    expect(html).not.toContain("data-openpanel-startup-video");
+    expect(html).not.toContain("data-openpanel-brand-mark");
   });
 
-  it("allows enough time for the five-second source animation to finish", () => {
-    expect(STARTUP_ANIMATION_FALLBACK_MS).toBeGreaterThan(5000);
-    expect(STARTUP_ANIMATION_FALLBACK_MS).toBeLessThan(6000);
+  it("uses a brief splash duration", () => {
+    expect(STARTUP_ANIMATION_FALLBACK_MS).toBeGreaterThan(1000);
+    expect(STARTUP_ANIMATION_FALLBACK_MS).toBeLessThan(4000);
   });
 });

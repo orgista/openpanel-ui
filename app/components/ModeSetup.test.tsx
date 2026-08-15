@@ -19,7 +19,7 @@ describe("ModeSetup", () => {
       <ModeSetup isTelevision onChoose={vi.fn()} />,
     );
 
-    expect(html).toContain('data-openpanel-brand-mark="true"');
+    expect(html).toContain('aria-label="OpenPanel by Orgista"');
     expect(html).toContain('data-input-mode="remote"');
     expect(html).toContain("Standalone TV");
     expect(html).toContain("OpenPanel becomes the TV home launcher");
