@@ -135,14 +135,8 @@ describe("YouTube storage migration", () => {
     ]);
   });
 
-  it("adds the five requested channels once and preserves later removals", () => {
-    expect(initializeApprovedYouTubeItems()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ title: "PBS KIDS", sourceLabel: "UCrNnk0wFBnCS1awGjq_ijGQ" }),
-      expect.objectContaining({ title: "TED-Ed", sourceLabel: "UCsooa4yRKGN_zEE8iknghZA" }),
-      expect.objectContaining({ title: "Sesame Street", sourceLabel: "UCoookXUzPciGrEZEXmh4Jjg" }),
-      expect.objectContaining({ title: "Bluey - Official Channel", sourceLabel: "UCVzLLZkDuFGAE2BGdBuBNBg" }),
-      expect.objectContaining({ title: "Homeschool Pop", sourceLabel: "UCfPyVJEBD7Di1YYjTdS2v8g" }),
-    ]));
+  it("starts with no hardcoded channel approvals and preserves admin choices", () => {
+    expect(initializeApprovedYouTubeItems()).toEqual([]);
 
     const existing = addYouTubeItem("dQw4w9WgXcQ", "Existing video");
     const channel = addYouTubeItem(
@@ -150,20 +144,31 @@ describe("YouTube storage migration", () => {
       "Kurzgesagt – In a Nutshell",
     );
 
-    expect(initializeApprovedYouTubeItems()).toEqual(
-      expect.arrayContaining([existing, channel]),
-    );
+    expect(initializeApprovedYouTubeItems()).toEqual([existing, channel]);
 
     removeYouTubeItem(channel!.id);
-    expect(initializeApprovedYouTubeItems()).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceLabel: "UCsXVk37bltHxD1rDPwtNM8Q" }),
-    ]));
+    expect(initializeApprovedYouTubeItems()).toEqual([existing]);
+  });
 
-    const requested = getYouTubeItems().find((item) => item.title === "PBS KIDS")!;
-    removeYouTubeItem(requested.id);
-    expect(initializeApprovedYouTubeItems()).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceLabel: "UCrNnk0wFBnCS1awGjq_ijGQ" }),
-    ]));
+  it("removes obsolete automatic approvals from older builds once", () => {
+    const oldDefault = addYouTubeItem(
+      "https://www.youtube.com/channel/UCrNnk0wFBnCS1awGjq_ijGQ",
+      "PBS KIDS",
+    );
+    const requested = addYouTubeItem(
+      "https://www.youtube.com/channel/UCfPyVJEBD7Di1YYjTdS2v8g",
+      "Homeschool Pop",
+    );
+    localStorage.setItem("openpanel.youtube.requested-channels.v1", "1");
+
+    expect(initializeApprovedYouTubeItems()).toEqual([requested]);
+    expect(oldDefault).not.toBeNull();
+
+    const readded = addYouTubeItem(
+      "https://www.youtube.com/channel/UCrNnk0wFBnCS1awGjq_ijGQ",
+      "PBS KIDS",
+    );
+    expect(initializeApprovedYouTubeItems()).toEqual([requested, readded]);
   });
 
   it("persists verified channel artwork for the home screen", () => {

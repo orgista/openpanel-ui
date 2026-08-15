@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from "motion/react";
 import { BookOpen, Headphones, Library, ListVideo, Play, Star } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { ContentItem } from "../App";
 
 interface FeaturedHeroProps {
   item: ContentItem;
   onLaunch: () => void;
+  remoteMode?: boolean;
 }
 
 const formatDuration = (dur?: string) => {
@@ -18,7 +20,19 @@ const formatDuration = (dur?: string) => {
   return dur;
 };
 
-export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
+export function FeaturedHero({ item, onLaunch, remoteMode = false }: FeaturedHeroProps) {
+  const initialButtonRef = useRef<HTMLButtonElement>(null);
+  const initialFocusApplied = useRef(false);
+
+  useEffect(() => {
+    if (!remoteMode || initialFocusApplied.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (!initialButtonRef.current) return;
+      initialButtonRef.current.focus({ preventScroll: true });
+      initialFocusApplied.current = true;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [remoteMode]);
 
   return (
     <AnimatePresence mode="wait">
@@ -133,6 +147,8 @@ export function FeaturedHero({ item, onLaunch }: FeaturedHeroProps) {
               className="flex gap-3"
             >
               <motion.button
+                ref={initialButtonRef}
+                data-dpad-initial={remoteMode ? "true" : undefined}
                 onClick={onLaunch}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}

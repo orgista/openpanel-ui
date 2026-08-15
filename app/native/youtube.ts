@@ -4,35 +4,17 @@
 
 const KEY = "openpanel.youtube.v2";
 const LEGACY_KEY = "openpanel.youtube.v1";
-const REQUESTED_CHANNELS_SEED_KEY = "openpanel.youtube.requested-channels.v1";
-
-const REQUESTED_CHANNELS = [
-  {
-    channelId: "UCrNnk0wFBnCS1awGjq_ijGQ",
-    title: "PBS KIDS",
-    thumbnailUrl: "https://yt3.googleusercontent.com/ZBcGbfxSEOigEe07nPd5AsSrYRO9NLqyxBZ1rGLtFC4Fr6eUqoL5D97U_aHLN4wO-p66Q7sO0g=s900-c-k-c0x00ffffff-no-rj",
-  },
-  {
-    channelId: "UCsooa4yRKGN_zEE8iknghZA",
-    title: "TED-Ed",
-    thumbnailUrl: "https://yt3.googleusercontent.com/PKUi-Lc3VFjUfsIhjK3n-FJDNBf-XQLdg4G4bv4fPFF96D3MVnkbub9ePpLoWdmdFgl5I1Zd=s900-c-k-c0x00ffffff-no-rj",
-  },
-  {
-    channelId: "UCoookXUzPciGrEZEXmh4Jjg",
-    title: "Sesame Street",
-    thumbnailUrl: "https://yt3.googleusercontent.com/UqIbNSghcysIlsbnGUxGMcY1Me7_bJ_zCrjz1oy9PueZVo63d1CnIk1tz8sAmTMNX9ojl4MhDQ=s900-c-k-c0x00ffffff-no-rj",
-  },
-  {
-    channelId: "UCVzLLZkDuFGAE2BGdBuBNBg",
-    title: "Bluey - Official Channel",
-    thumbnailUrl: "https://yt3.googleusercontent.com/7Jlomy-7asRjE8WHiLbAqw-LJq5VdyRpBnXU7yxLi-lqXS_OSB5Kd7MLDv9ybsafyOdi5uzCCQ=s900-c-k-c0x00ffffff-no-rj",
-  },
-  {
-    channelId: "UCfPyVJEBD7Di1YYjTdS2v8g",
-    title: "Homeschool Pop",
-    thumbnailUrl: "https://yt3.googleusercontent.com/yENC7nbCi2IqwCeDy8T7Kzpcubxt-iz_yR69dlKGXvwufaEJIbk7iYYseVAqMAAoLNrs4hjR=s900-c-k-c0x00ffffff-no-rj",
-  },
-] as const;
+const LEGACY_AUTOMATIC_APPROVAL_MARKER = "openpanel.youtube.requested-channels.v1";
+const LEGACY_AUTOMATIC_APPROVAL_CLEANUP = "openpanel.youtube.automatic-approvals-removed.v1";
+// Temporary migration data. These four sources shipped automatically in old
+// builds but were never administrator choices. Homeschool Pop and Kurzgesagt
+// remain because they were explicitly requested for the managed devices.
+const OBSOLETE_AUTOMATIC_CHANNEL_IDS = new Set([
+  "UCrNnk0wFBnCS1awGjq_ijGQ",
+  "UCsooa4yRKGN_zEE8iknghZA",
+  "UCoookXUzPciGrEZEXmh4Jjg",
+  "UCVzLLZkDuFGAE2BGdBuBNBg",
+]);
 
 export type YouTubeSourceKind = "video" | "channel" | "playlist";
 export type YouTubeListType = "playlist" | "user_uploads";
@@ -341,22 +323,20 @@ export function getYouTubeItems(): KioskYouTubeItem[] {
   return migrated;
 }
 
-/** Add this tablet's requested channels once while preserving later removals. */
+/** Read only the sources an administrator has approved on this device. */
 export function initializeApprovedYouTubeItems(): KioskYouTubeItem[] {
   try {
-    if (localStorage.getItem(REQUESTED_CHANNELS_SEED_KEY) !== "1") {
-      for (const channel of REQUESTED_CHANNELS) {
-        addYouTubeItem(
-          `https://www.youtube.com/channel/${channel.channelId}`,
-          channel.title,
-          channel.thumbnailUrl,
-        );
-      }
-      localStorage.setItem(REQUESTED_CHANNELS_SEED_KEY, "1");
+    if (
+      localStorage.getItem(LEGACY_AUTOMATIC_APPROVAL_MARKER) === "1"
+      && localStorage.getItem(LEGACY_AUTOMATIC_APPROVAL_CLEANUP) !== "1"
+    ) {
+      save(getYouTubeItems().filter((item) => (
+        item.kind !== "channel" || !OBSOLETE_AUTOMATIC_CHANNEL_IDS.has(item.sourceLabel)
+      )));
+      localStorage.setItem(LEGACY_AUTOMATIC_APPROVAL_CLEANUP, "1");
     }
   } catch {
-    // Storage may be unavailable in a restricted browser context. The caller
-    // still receives whatever sources are currently readable.
+    // Storage may be unavailable in a restricted browser context.
   }
   return getYouTubeItems();
 }

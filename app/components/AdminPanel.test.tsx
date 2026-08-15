@@ -1,9 +1,27 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { AdminPanel, kioskActionErrorMessage, resetAdminPanelScroll } from "./AdminPanel";
+import {
+  AdminPanel,
+  adminTabsForDevice,
+  kioskActionErrorMessage,
+  resetAdminPanelScroll,
+} from "./AdminPanel";
 
 describe("AdminPanel", () => {
+  it("uses a compact TV tab set without the tablet-only library", () => {
+    expect(adminTabsForDevice(true, true)).toEqual([
+      "apps",
+      "health",
+      "youtube",
+      "power",
+      "kiosk",
+      "diagnostics",
+      "security",
+    ]);
+    expect(adminTabsForDevice(true, false)).toContain("library");
+  });
+
   it("returns the scrollable content to the top when changing sections", () => {
     const panel = { scrollTop: 280 } as HTMLDivElement;
 
@@ -298,6 +316,8 @@ describe("AdminPanel", () => {
         onSetInactivityTimeout={vi.fn()}
         allowSameChannelRecommendations
         onSetAllowSameChannelRecommendations={vi.fn()}
+        libraryEnabled={false}
+        onSetLibraryEnabled={vi.fn()}
         videos={[]}
         onAddVideo={vi.fn(() => true)}
         onRemoveVideo={vi.fn()}
@@ -317,10 +337,69 @@ describe("AdminPanel", () => {
     );
 
     expect(html).toContain("Books &amp; Audio");
+    expect(html).toContain("Show Books &amp; Audio on Home");
+    expect(html).toContain('aria-label="Show Books and Audio on Home"');
+    expect(html).toContain('aria-checked="false"');
     expect(html).toContain("OPDS 1/2 catalogs");
     expect(html).toContain("Import file");
     expect(html).toContain("Institutional catalogs");
     expect(html).toContain("Licensed Palace, Libby, Hoopla, cloudLibrary, or LCP collections");
+  });
+
+  it("does not show Books & Audio controls on televisions", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        libraryEnabled
+        onSetLibraryEnabled={vi.fn()}
+        videos={[]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        deviceProfile={{
+          sdk: 28,
+          deviceType: "television",
+          isTelevision: true,
+          isTablet: false,
+          isHandheld: false,
+          hasLeanback: true,
+          hasTouchscreen: false,
+          hasDpad: true,
+          hasHardwareKeyboard: false,
+          smallestScreenWidthDp: 960,
+          hasBattery: false,
+          remoteUi: true,
+          touchUi: false,
+          showBattery: false,
+          supportsLeanbackApps: true,
+          voiceInputAvailable: true,
+          controllerName: null,
+        }}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("Books &amp; Audio");
+    expect(html).toContain(">Screen<");
+    expect(html).toContain(">Kiosk<");
   });
 
   it("explains that videos, channels, and playlists are supported", () => {
@@ -373,7 +452,7 @@ describe("AdminPanel", () => {
     );
 
     expect(html).toContain("YouTube Videos, Channels &amp; Playlists");
-    expect(html).toContain("Same-channel recommendations");
+    expect(html).toContain("More from the same channel");
     expect(html).toContain('role="switch"');
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Allowed YouTube Sources (0)");
@@ -386,6 +465,52 @@ describe("AdminPanel", () => {
     expect(html).toContain("Paste a YouTube link");
     expect(html).toContain("youtube.com video, playlist, or channel URL");
     expect(html).not.toContain("YouTube Data API key");
+  });
+
+  it("renders approved channel artwork as large circular icons", () => {
+    const html = renderToStaticMarkup(
+      <AdminPanel
+        isOpen
+        onClose={vi.fn()}
+        apps={[]}
+        availableApps={[]}
+        onAddApp={vi.fn()}
+        onRemoveApp={vi.fn()}
+        inactivityTimeout={5}
+        onSetInactivityTimeout={vi.fn()}
+        allowSameChannelRecommendations
+        onSetAllowSameChannelRecommendations={vi.fn()}
+        videos={[{
+          id: "channel:pbs",
+          kind: "channel",
+          sourceId: "UUrNnk0wFBnCS1awGjq_ijGQ",
+          sourceLabel: "UCrNnk0wFBnCS1awGjq_ijGQ",
+          listType: "playlist",
+          title: "PBS KIDS",
+          thumbnailUrl: "https://yt3.googleusercontent.com/example=s900-c-k-c0x00ffffff-no-rj",
+          addedAt: 1,
+        }]}
+        onAddVideo={vi.fn(() => true)}
+        onRemoveVideo={vi.fn()}
+        standalone
+        appMode="standalone"
+        onSetAppMode={vi.fn()}
+        kioskStatus={null}
+        onRefreshKiosk={vi.fn()}
+        onSetDefaultLauncher={vi.fn()}
+        onRequestDeviceAdmin={vi.fn()}
+        onLockKiosk={vi.fn()}
+        onUnlockKiosk={vi.fn()}
+        onClearDeviceOwner={vi.fn()}
+        onResetAdmin={vi.fn()}
+        initialTab="youtube"
+      />,
+    );
+
+    expect(html).toContain("PBS KIDS");
+    expect(html).toContain("youtube-channel-art");
+    expect(html).toContain("rounded-full");
+    expect(html).toContain('loading="lazy"');
   });
 
   it("shows an authenticated persistent bug log with remote-reachable controls", () => {

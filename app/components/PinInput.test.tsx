@@ -20,9 +20,9 @@ describe("PinInput", () => {
     expect(html).toContain("pin-entry-title");
     expect(html).toContain("pin-entry-digits");
     expect(html).toContain("pin-keypad");
-    expect(html).toContain("max-w-sm");
-    expect(html).not.toContain("sm:h-14");
-    expect(html).not.toContain("sm:p-8");
+    expect(html).toContain("max-w-lg");
+    expect(html).toContain("min-h-14");
+    expect(html).toContain("max-w-[19rem]");
     expect(html).toContain('aria-label="1"');
     expect(html).toContain('aria-label="Delete last digit"');
     expect(html).toContain("Chromecast Voice Remote");
@@ -30,5 +30,6 @@ describe("PinInput", () => {
     expect(html).toContain("Number keys also work");
     expect(html).not.toContain("<input");
     expect(html).toContain("pin-entry-cancel");
+    expect(html).toContain("min-h-12");
   });
 });

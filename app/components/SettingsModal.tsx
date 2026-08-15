@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { X, Wifi, Bluetooth, LogOut, Shield, RefreshCw, ExternalLink, Loader2, Lock, LayoutGrid } from "lucide-react";
+import { X, Wifi, Bluetooth, LogOut, Shield, RefreshCw, ExternalLink, Loader2, Lock, LayoutGrid, Plus } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AdminAuth } from "./AdminAuth";
 import { SystemBridge, type WifiNetwork, type BtDevice, type DeviceProfile } from "../native/SystemBridge";
@@ -36,6 +36,27 @@ export function wifiSignalLabel(signal: number): "Excellent" | "Good" | "Fair" |
   return "Weak";
 }
 
+type SettingsTabDownDestination = "browse" | "body" | "footer";
+
+export function settingsTabDownTarget({
+  activeTab,
+  usesTvWifiPicker,
+  wifiListVisible,
+  browseDisabled,
+  hasBodyControl,
+}: {
+  activeTab: "wifi" | "bluetooth";
+  usesTvWifiPicker: boolean;
+  wifiListVisible: boolean;
+  browseDisabled: boolean;
+  hasBodyControl: boolean;
+}): SettingsTabDownDestination {
+  if (activeTab === "wifi" && usesTvWifiPicker && !wifiListVisible) return "footer";
+  if (!browseDisabled) return "browse";
+  if (hasBodyControl) return "body";
+  return "footer";
+}
+
 const settingsBodyFocusableSelector = [
   "button:not([disabled])",
   "input:not([disabled]):not([type='hidden'])",
@@ -64,6 +85,7 @@ export function SettingsModal({
   const [networks, setNetworks] = useState<WifiNetwork[]>([]);
   const [wifiScanning, setWifiScanning] = useState(false);
   const [wifiError, setWifiError] = useState<string | null>(null);
+  const [fireWifi, setFireWifi] = useState<{ connected: boolean; ssid?: string }>({ connected: false });
   const [wifiListExpanded, setWifiListExpanded] = useState(false);
   const [connect, setConnect] = useState<ConnectState>({ phase: "idle" });
   const [password, setPassword] = useState("");
@@ -81,7 +103,6 @@ export function SettingsModal({
   const settingsBodyRef = useRef<HTMLDivElement | null>(null);
   const footerRefs = useRef<Partial<Record<SettingsFooterAction, HTMLButtonElement | null>>>({});
   const canOpenFullSystemSettings = isAdmin
-    && deviceProfile?.isTelevision !== true
     && (isStandalone || deviceProfile?.isTablet === true);
   const footerOrder: SettingsFooterAction[] = isAdmin
     ? [
@@ -92,6 +113,8 @@ export function SettingsModal({
       ]
     : ["adminMode"];
   const usesTvWifiPicker = deviceProfile?.isTelevision === true;
+  const legacyTelevision = usesTvWifiPicker && (deviceProfile?.sdk ?? 999) <= 28;
+  const usesFireWifiSettings = deviceProfile?.isFireOs === true;
   const wifiListVisible = !usesTvWifiPicker || wifiListExpanded;
 
   const settingsBodyFocusableElements = () => Array.from(
@@ -143,7 +166,17 @@ export function SettingsModal({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       event.stopPropagation();
-      browseNetworksRef.current?.focus();
+      const [firstBodyControl] = settingsBodyFocusableElements();
+      const destination = settingsTabDownTarget({
+        activeTab,
+        usesTvWifiPicker,
+        wifiListVisible,
+        browseDisabled: wifiScanning || btScanning || (activeTab === "wifi" && usesFireWifiSettings),
+        hasBodyControl: !!firstBodyControl,
+      });
+      if (destination === "browse") browseNetworksRef.current?.focus();
+      else if (destination === "body") firstBodyControl?.focus();
+      else focusFirstFooterAction();
       return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -166,6 +199,25 @@ export function SettingsModal({
       setWifiError(e?.message || "Could not scan Wi-Fi networks");
     } finally {
       setWifiScanning(false);
+    }
+  }, []);
+
+  const openFireWifiSettings = useCallback(async () => {
+    if (!isAdmin) return;
+    setWifiError(null);
+    try {
+      await SystemBridge.openWifiSettings();
+    } catch (e: any) {
+      setWifiError(e?.message || "Could not open Fire OS Wi-Fi settings");
+    }
+  }, [isAdmin]);
+
+  const loadFireWifiStatus = useCallback(async () => {
+    try {
+      const status = await SystemBridge.getWifiStatus();
+      setFireWifi({ connected: status.connected, ssid: status.ssid });
+    } catch {
+      setFireWifi({ connected: false });
     }
   }, []);
 
@@ -255,9 +307,10 @@ export function SettingsModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (activeTab === "wifi" && wifiListVisible) scanWifi();
+    if (activeTab === "wifi" && usesFireWifiSettings) void loadFireWifiStatus();
+    else if (activeTab === "wifi" && wifiListVisible) scanWifi();
     if (activeTab === "bluetooth") loadBluetooth();
-  }, [isOpen, activeTab, wifiListVisible, scanWifi, loadBluetooth]);
+  }, [isOpen, activeTab, wifiListVisible, usesFireWifiSettings, scanWifi, loadBluetooth, loadFireWifiStatus]);
 
   useEffect(() => {
     if (!isOpen || showAdminAuth) return;
@@ -273,7 +326,8 @@ export function SettingsModal({
     const onResume = () => {
       if (document.visibilityState !== "visible") return;
       if (activeTab === "wifi") {
-        if (wifiListVisible) scanWifi();
+        if (usesFireWifiSettings) void loadFireWifiStatus();
+        else if (wifiListVisible) scanWifi();
       } else {
         loadBluetooth();
       }
@@ -281,7 +335,7 @@ export function SettingsModal({
     };
     document.addEventListener("visibilitychange", onResume);
     return () => document.removeEventListener("visibilitychange", onResume);
-  }, [isOpen, activeTab, wifiListVisible, scanWifi, loadBluetooth, onNetworkChange]);
+  }, [isOpen, activeTab, wifiListVisible, usesFireWifiSettings, scanWifi, loadBluetooth, loadFireWifiStatus, onNetworkChange]);
 
   // The adapter can settle into on/off well after the user taps the system
   // dialog — this native event fires exactly then, so the toggle never goes stale.
@@ -388,11 +442,13 @@ export function SettingsModal({
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={legacyTelevision ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={legacyTelevision ? { duration: 0 } : undefined}
         data-dpad-scope
-        className="settings-modal-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 backdrop-blur-xl z-50 flex items-center justify-center"
+        data-legacy-tv={legacyTelevision ? "true" : "false"}
+        className={`settings-modal-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 z-50 flex items-center justify-center ${legacyTelevision ? "" : "backdrop-blur-xl"}`}
         onClick={showAdminAuth ? undefined : onClose}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
@@ -403,9 +459,10 @@ export function SettingsModal({
         }}
       >
         <motion.div
-          initial={{ opacity: 0, y: 50 }}
+          initial={legacyTelevision ? false : { opacity: 0, y: 50 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 50 }}
+          transition={legacyTelevision ? { duration: 0 } : undefined}
           onClick={(e) => e.stopPropagation()}
           className="settings-modal-card bg-[oklch(20.5%_0_0)] rounded-2xl w-full max-w-4xl max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
         >
@@ -468,11 +525,12 @@ export function SettingsModal({
 
                 <div className="flex-1" />
 
-                <button
+                {!(activeTab === "wifi" && usesFireWifiSettings) && <button
                   ref={browseNetworksRef}
                   onClick={() => {
                     if (activeTab === "wifi") {
-                      if (wifiListVisible) scanWifi();
+                      if (usesFireWifiSettings) void openFireWifiSettings();
+                      else if (wifiListVisible) scanWifi();
                       else setWifiListExpanded(true);
                     } else {
                       scanBluetooth();
@@ -492,18 +550,22 @@ export function SettingsModal({
                     if (firstBodyControl) firstBodyControl.focus();
                     else focusFirstFooterAction();
                   }}
-                  disabled={wifiScanning || btScanning}
-                  aria-expanded={activeTab === "wifi" ? wifiListVisible : undefined}
+                  disabled={wifiScanning || btScanning || (activeTab === "wifi" && usesFireWifiSettings && !isAdmin)}
+                  aria-expanded={activeTab === "wifi" && !usesFireWifiSettings ? wifiListVisible : undefined}
                   className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)] transition-colors disabled:opacity-50"
                   style={{ fontWeight: 500 }}
                 >
                   {(activeTab === "wifi" ? wifiScanning : btScanning)
                     ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <RefreshCw className="w-4 h-4" />}
+                    : usesFireWifiSettings && activeTab === "wifi"
+                      ? <ExternalLink className="w-4 h-4" />
+                      : <RefreshCw className="w-4 h-4" />}
                   {activeTab === "wifi"
-                    ? (wifiListVisible ? "Refresh networks" : "Browse networks")
+                    ? (usesFireWifiSettings
+                        ? "Open Fire Wi-Fi settings"
+                        : (wifiListVisible ? "Refresh networks" : "Browse networks"))
                     : (!btScanning ? "Scan for devices" : "Scanning")}
-                </button>
+                </button>}
               </div>
 
               <div
@@ -511,7 +573,46 @@ export function SettingsModal({
                 onKeyDownCapture={handleSettingsBodyKeyDownCapture}
                 className="settings-modal-body min-h-0 flex-1 overflow-y-auto p-8"
               >
-                {activeTab === "wifi" && usesTvWifiPicker && !wifiListVisible && (
+                {activeTab === "wifi" && usesFireWifiSettings && (
+                  <div className="fire-wifi-panel mx-auto w-full max-w-3xl">
+                    <div className="rounded-xl border border-[oklch(38%_0_0)] bg-[oklch(23%_0_0)] p-5">
+                      <div className="mb-4 flex items-center gap-3">
+                        <Wifi className="size-7 text-[oklch(65%_0.19_255)]" />
+                        <p className="text-2xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 600 }}>Wi-Fi</p>
+                      </div>
+                      <div className="mb-3 flex min-h-14 items-center gap-4 rounded-xl border border-[oklch(36%_0_0)] bg-[oklch(18%_0_0)] px-4 py-3 text-left">
+                        <Wifi className={`size-5 shrink-0 ${fireWifi.connected ? "text-[oklch(65%_0.19_255)]" : "text-[oklch(58%_0_0)]"}`} />
+                        <div className="min-w-0">
+                          <p className="truncate text-base text-[oklch(94%_0_0)]" style={{ fontWeight: 500 }}>
+                            {fireWifi.connected && fireWifi.ssid ? `Connected to ${fireWifi.ssid}` : "Not connected"}
+                          </p>
+                          <p className="text-sm text-[oklch(62%_0_0)]">Saved networks stay in Fire OS.</p>
+                        </div>
+                      </div>
+                      {wifiError && (
+                        <div className="mb-4 p-3 bg-[oklch(63.7%_0.237_25.331)]/10 border border-[oklch(63.7%_0.237_25.331)]/30 rounded-lg text-[oklch(70.4%_0.191_22.216)] text-sm">
+                          {wifiError}
+                        </div>
+                      )}
+                      <button
+                        ref={browseNetworksRef}
+                        type="button"
+                        onClick={() => void openFireWifiSettings()}
+                        disabled={!isAdmin}
+                        className="flex min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-[oklch(48.8%_0.243_264.376)] px-5 py-3 text-base text-white transition-colors hover:brightness-110 disabled:bg-[oklch(29%_0_0)] disabled:text-[oklch(58%_0_0)]"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <span className="relative"><Wifi className="size-5" /><Plus className="absolute -bottom-1 -right-1 size-3.5" /></span>
+                        Add a network
+                      </button>
+                      <p className="mt-2 text-center text-sm text-[oklch(62%_0_0)]">
+                        {isAdmin ? "Opens Fire OS Wi-Fi." : "Enter Admin Mode to add or change a network."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "wifi" && !usesFireWifiSettings && usesTvWifiPicker && !wifiListVisible && (
                   <div className="h-full min-h-48 flex items-center justify-center text-center">
                     <div className="max-w-lg">
                       <Wifi className="w-9 h-9 mx-auto mb-4 text-[oklch(55.6%_0_0)]" />
@@ -525,7 +626,7 @@ export function SettingsModal({
                   </div>
                 )}
 
-                {activeTab === "wifi" && wifiListVisible && (
+                {activeTab === "wifi" && !usesFireWifiSettings && wifiListVisible && (
                   <div className="space-y-3">
                     {wifiError && (
                       <div className="p-4 bg-[oklch(63.7%_0.237_25.331)]/10 border border-[oklch(63.7%_0.237_25.331)]/30 rounded-lg text-[oklch(70.4%_0.191_22.216)] text-sm">
@@ -884,10 +985,10 @@ export function SettingsModal({
 
                 <div className="flex-1" />
 
-                {/* Authenticated tablet admins need the complete Android Settings
-                    surface for maintenance such as authorizing ADB. Keep this
-                    escape route hidden on television builds. ArborXR still owns
-                    the device allowlist, so Settings must also be allowed there. */}
+                {/* Authenticated standalone admins need the complete Android
+                    Settings surface for maintenance such as authorizing ADB.
+                    Companion TVs keep this hidden because their DPC owns the
+                    allowed settings surface. */}
                 {canOpenFullSystemSettings && (
                   <button
                     ref={(element) => { footerRefs.current.systemSettings = element; }}

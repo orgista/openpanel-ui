@@ -28,7 +28,7 @@ interface DeviceHealthPanelProps {
 }
 
 const buttonClass =
-  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 disabled:opacity-50 transition-colors";
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-2.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 disabled:opacity-50 transition-colors";
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "Unknown";
@@ -160,14 +160,19 @@ export function DeviceHealthPanel({
 
   if (loading && !health) {
     return (
-      <div role="status" className="flex items-center justify-center gap-3 py-16 text-[oklch(70.8%_0_0)]">
-        <Loader2 className="size-5 animate-spin" /> Detecting this device…
-      </div>
+      <section aria-labelledby="device-health-heading" className="device-health-panel space-y-4">
+        <h3 id="device-health-heading" className="text-xl text-[oklch(98.5%_0_0)]" style={{ fontWeight: 500 }}>
+          Device Health
+        </h3>
+        <div role="status" className="flex items-center justify-center gap-3 py-16 text-[oklch(70.8%_0_0)]">
+          <Loader2 className="size-5 animate-spin" /> Detecting this device…
+        </div>
+      </section>
     );
   }
 
   return (
-    <section aria-labelledby="device-health-heading" className="space-y-6">
+    <section aria-labelledby="device-health-heading" className="device-health-panel space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -227,7 +232,7 @@ export function DeviceHealthPanel({
           <div>
             <p className="text-[oklch(94%_0_0)]" style={{ fontWeight: 500 }}>
               {isFireOs
-                ? "Fire standalone app policy"
+                ? "Fire device policy"
                 : health?.canManageApps
                   ? "Managed-device controls available"
                   : health?.arborXrManaged
@@ -236,7 +241,7 @@ export function DeviceHealthPanel({
             </p>
             <p className="text-sm text-[oklch(72%_0_0)] mt-1">
               {isFireOs
-                ? "OpenPanel reports reviewed Fire packages here. Apply or restore the documented ADB package list from an authorized workstation."
+                ? "Reviewed Amazon apps are disabled with a reversible ADB policy. Fire OS components required for boot, Wi-Fi, settings, and the launcher redirect stay protected."
                 : health?.canManageApps
                 ? "OpenPanel uses Android's on-device management APIs. Changes are tracked and reversible."
                 : health?.arborXrManaged
@@ -251,7 +256,7 @@ export function DeviceHealthPanel({
         <div className="flex items-start gap-3">
           <BellOff className="size-5 mt-0.5 text-[oklch(75%_0.16_255)]" />
           <div>
-            <p className="text-[oklch(98%_0_0)]" style={{ fontWeight: 500 }}>Manage app notifications</p>
+            <p className="text-[oklch(98%_0_0)]" style={{ fontWeight: 500 }}>Block app notifications</p>
             <p className="text-xs sm:text-sm text-[oklch(70.8%_0_0)] mt-1">
               On by default. Suppresses eligible app notifications while preserving Android, emergency, launcher, management, and OpenPanel services.
             </p>
@@ -261,7 +266,7 @@ export function DeviceHealthPanel({
           type="button"
           role="switch"
           aria-checked={manageNotifications}
-          aria-label="Manage app notifications"
+          aria-label="Block app notifications"
           disabled={busyKey !== null}
           onClick={() => void toggleNotifications()}
           className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${manageNotifications

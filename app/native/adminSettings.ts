@@ -7,6 +7,7 @@ export interface AdminSettings {
   inactivityTimeoutMinutes: number;
   allowSameChannelRecommendations: boolean;
   manageNotifications: boolean;
+  libraryEnabled: boolean;
 }
 
 interface StorageLike {
@@ -43,6 +44,8 @@ const normalize = (value: Partial<AdminSettings> | null | undefined): AdminSetti
       : true,
   manageNotifications:
     typeof value?.manageNotifications === "boolean" ? value.manageNotifications : true,
+  libraryEnabled:
+    typeof value?.libraryEnabled === "boolean" ? value.libraryEnabled : false,
 });
 
 export function loadAdminSettings(storage: StorageLike | null = defaultStorage()): AdminSettings {

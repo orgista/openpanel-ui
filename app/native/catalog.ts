@@ -23,6 +23,8 @@ const EXCLUDED = new Set([
   "com.huawei.appmarket",
   "com.kiwibrowser.browser",
   "com.microsoft.emmx",
+  "com.netflix.mediaclient",
+  "com.netflix.ninja",
   "com.opera.browser",
   "com.opera.mini.native",
   "com.oppo.market",
@@ -37,10 +39,7 @@ const EXCLUDED = new Set([
   "org.mozilla.firefox",
   "org.mozilla.fenix",
   "org.mozilla.focus",
-]);
-const SUPPORTED_SYSTEM_APPS = new Set([
-  "com.netflix.mediaclient",
-  "com.netflix.ninja",
+  "com.spotify.music",
 ]);
 
 /**
@@ -51,7 +50,7 @@ const SUPPORTED_SYSTEM_APPS = new Set([
  */
 export function isAllowedApp(app: InstalledApp, mode: AppMode): boolean {
   if (EXCLUDED.has(app.packageName)) return false;
-  if (app.isSystem && !SUPPORTED_SYSTEM_APPS.has(app.packageName)) return false;
+  if (app.isSystem) return false;
   if (mode === "standalone") return true;
   // ArborXR's Device Owner policy is the source of truth. Install-source
   // metadata is frequently null for APKs that ArborXR deploys successfully.

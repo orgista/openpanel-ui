@@ -5,6 +5,7 @@ import {
   LibrarySetupStep,
   onboardingStepsForDevice,
   permissionKeysForDevice,
+  youtubeChannelSetupError,
 } from "./StandaloneOnboarding";
 
 describe("StandaloneOnboarding library setup", () => {
@@ -52,5 +53,16 @@ describe("StandaloneOnboarding library setup", () => {
     ]);
     expect(permissionKeysForDevice(true, false)).toEqual(["launcher"]);
     expect(permissionKeysForDevice(true, true)).toEqual(["launcher"]);
+  });
+
+  it("distinguishes a YouTube network failure from a missing channel", () => {
+    expect(youtubeChannelSetupError(
+      { code: "YOUTUBE_CHANNEL_LOOKUP_FAILED" },
+      "Homeschool Pop",
+    )).toContain("Check this TV’s connection");
+    expect(youtubeChannelSetupError(
+      { code: "YOUTUBE_CHANNEL_NOT_FOUND" },
+      "Homeschool Pop",
+    )).toContain("matching “Homeschool Pop”");
   });
 });

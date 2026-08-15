@@ -53,4 +53,21 @@ describe("findNextDpadTarget", () => {
       "down",
     )).toBeNull();
   });
+
+  it("does not treat a one-pixel same-row offset as downward navigation", () => {
+    const wifiTab = rect(98, 144, 185, 80);
+    const browseNetworks = rect(1470, 145, 350, 80);
+    const adminMode = rect(98, 700, 286, 88);
+
+    expect(findNextDpadTarget(
+      wifiTab,
+      [browseNetworks, adminMode],
+      "down",
+    )).toBe(1);
+    expect(findNextDpadTarget(
+      wifiTab,
+      [browseNetworks, adminMode],
+      "right",
+    )).toBe(0);
+  });
 });

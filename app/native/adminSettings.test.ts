@@ -26,6 +26,7 @@ describe("admin settings", () => {
         inactivityTimeoutMinutes: 12,
         allowSameChannelRecommendations: false,
         manageNotifications: false,
+        libraryEnabled: true,
       },
       storage,
     );
@@ -35,6 +36,7 @@ describe("admin settings", () => {
       inactivityTimeoutMinutes: 12,
       allowSameChannelRecommendations: false,
       manageNotifications: false,
+      libraryEnabled: true,
     });
   });
 
@@ -50,6 +52,7 @@ describe("admin settings", () => {
       inactivityTimeoutMinutes: 60,
       allowSameChannelRecommendations: true,
       manageNotifications: true,
+      libraryEnabled: false,
     });
   });
 
@@ -59,6 +62,7 @@ describe("admin settings", () => {
       inactivityTimeoutMinutes: DEFAULT_INACTIVITY_TIMEOUT_MINUTES,
       allowSameChannelRecommendations: true,
       manageNotifications: true,
+      libraryEnabled: false,
     });
   });
 });

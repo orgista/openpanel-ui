@@ -91,6 +91,7 @@ export interface YouTubeChannelVideoResult {
 }
 
 export interface DeviceProfile {
+  sdk?: number;
   deviceType: "television" | "tablet" | "handheld";
   isTelevision: boolean;
   isTablet: boolean;
@@ -187,6 +188,10 @@ interface SystemBridgePlugin {
   writeDiagnostic(opts: { level: "info" | "warning" | "error"; message: string }): Promise<void>;
   hideKeyboard(): Promise<void>;
   setKeepScreenOn(opts: { enabled: boolean }): Promise<void>;
+  setLegacyTvCompatRendering(opts: { enabled: boolean }): Promise<{
+    applied: boolean;
+    enabled: boolean;
+  }>;
   getDeviceProfile(): Promise<DeviceProfile>;
   requestVoiceInput(opts?: { prompt?: string }): Promise<{ text: string }>;
   resolveYouTubeChannel(opts: { input: string }): Promise<{ channel: YouTubeChannelResult }>;
@@ -433,8 +438,12 @@ const webMock: SystemBridgePlugin = {
   async writeDiagnostic() {},
   async hideKeyboard() {},
   async setKeepScreenOn() {},
+  async setLegacyTvCompatRendering({ enabled }) {
+    return { applied: false, enabled };
+  },
   async getDeviceProfile() {
     return {
+      sdk: 34,
       deviceType: "television",
       isTelevision: true,
       isTablet: false,

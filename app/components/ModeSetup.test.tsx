@@ -20,6 +20,7 @@ describe("ModeSetup", () => {
     );
 
     expect(html).toContain('data-openpanel-brand-mark="true"');
+    expect(html).toContain('data-input-mode="remote"');
     expect(html).toContain("Standalone TV");
     expect(html).toContain("OpenPanel becomes the TV home launcher");
     expect(html).not.toContain("OpenPanel becomes the home launcher and locks the device");

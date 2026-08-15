@@ -35,11 +35,24 @@ export function findNextDpadTarget(
     const primary = direction === "left" ? -deltaX
       : direction === "right" ? deltaX
         : direction === "up" ? -deltaY : deltaY;
-    if (primary <= 1) return;
+    const horizontal = direction === "left" || direction === "right";
+    const currentPrimarySize = horizontal ? current.width : current.height;
+    const candidatePrimarySize = horizontal ? candidate.width : candidate.height;
+    // Browser layout rounding often puts same-row controls one pixel apart on
+    // the other axis. Require meaningful travel before calling a target left,
+    // right, above, or below the current control.
+    const minimumDirectionalTravel = Math.max(
+      8,
+      Math.min(currentPrimarySize, candidatePrimarySize) * 0.2,
+    );
+    if (primary < minimumDirectionalTravel) return;
 
-    const crossAxis = direction === "left" || direction === "right"
+    const crossAxis = horizontal
       ? Math.abs(deltaY)
       : Math.abs(deltaX);
+    // Reject steep diagonals. Without this, a footer that is only slightly to
+    // the right can beat a true same-row control that is farther away.
+    if (primary < crossAxis * 0.25) return;
     const score = primary * 4 + crossAxis;
     if (score < bestScore) {
       bestScore = score;
@@ -97,7 +110,10 @@ const shouldKeepNativeArrowBehavior = (
  * Installs a WebView-safe spatial navigation fallback. Component-specific
  * handlers still win because this listener ignores already-prevented events.
  */
-export function installDpadNavigation(enabled: boolean): () => void {
+export function installDpadNavigation(
+  enabled: boolean,
+  forceFullRepaint = false,
+): () => void {
   if (!enabled || typeof window === "undefined" || typeof document === "undefined") {
     return () => {};
   }
@@ -132,8 +148,9 @@ export function installDpadNavigation(enabled: boolean): () => void {
     }
 
     let target: HTMLElement | null = null;
-    if (!active || !scope.contains(active) || !isRendered(active)) {
-      target = candidates[0];
+    if (!active || active === document.body || !scope.contains(active) || !isRendered(active)) {
+      target = candidates.find((candidate) => candidate.hasAttribute("data-dpad-initial"))
+        ?? candidates[0];
       recordDiagnostic("info", "D-pad focus recovered inside active screen", {
         direction,
         target: target.getAttribute("aria-label") || target.textContent?.trim().slice(0, 80),
@@ -151,6 +168,18 @@ export function installDpadNavigation(enabled: boolean): () => void {
     event.preventDefault();
     target.focus({ preventScroll: true });
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (forceFullRepaint) {
+      // Android 9 TCL hardware composition can repaint only the new focus ring
+      // and drop every unchanged WebView tile. A one-frame root opacity change
+      // invalidates the complete surface without the memory cost of keeping
+      // the full launcher on a software layer.
+      const root = document.documentElement;
+      const previousOpacity = root.style.opacity;
+      root.style.opacity = "0.99";
+      window.requestAnimationFrame(() => {
+        root.style.opacity = previousOpacity || "1";
+      });
+    }
   };
 
   window.addEventListener("keydown", handleKeyDown);

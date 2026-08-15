@@ -22,10 +22,11 @@ export function ModeSetup({
   return (
     <div
       data-dpad-scope
+      data-input-mode={isTelevision ? "remote" : "touch"}
       className="fixed inset-0 bg-[oklch(11%_0_0)] z-[300] flex items-center justify-center p-8"
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
+        initial={isTelevision ? false : { opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-3xl"
       >

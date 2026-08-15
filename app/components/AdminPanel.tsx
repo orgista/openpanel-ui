@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
-import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw, HeartPulse, Library } from "lucide-react";
+import { X, Plus, Trash2, Power, Youtube, Lock, Unlock, ShieldCheck, Smartphone, Monitor, Check, AlertTriangle, Bug, RefreshCw, HeartPulse, Library, LayoutGrid } from "lucide-react";
 import { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type KioskYouTubeItem, thumbnailUrl } from "../native/youtube";
 import { SystemBridge, type DeviceProfile, type KioskStatus } from "../native/SystemBridge";
 import type { AppMode } from "../appConfig";
@@ -17,6 +17,7 @@ interface App {
   id: string;
   name: string;
   icon: LucideIcon;
+  iconUrl?: string;
   gradient: string;
 }
 
@@ -33,6 +34,8 @@ interface AdminPanelProps {
   onSetAllowSameChannelRecommendations: (allowed: boolean) => void;
   manageNotifications?: boolean;
   onSetManageNotifications?: (enabled: boolean) => void;
+  libraryEnabled?: boolean;
+  onSetLibraryEnabled?: (enabled: boolean) => void;
   // Locked YouTube videos, channels, and playlists.
   videos: KioskYouTubeItem[];
   onAddVideo: (url: string, title: string, thumbnailUrl?: string | null) => boolean; // false if source is invalid
@@ -55,6 +58,34 @@ interface AdminPanelProps {
 }
 
 type AdminTab = "apps" | "health" | "library" | "youtube" | "kiosk" | "power" | "diagnostics" | "security";
+
+const ADMIN_TAB_DETAILS: Record<AdminTab, {
+  label: string;
+  televisionLabel?: string;
+  icon: LucideIcon;
+}> = {
+  apps: { label: "Apps", icon: LayoutGrid },
+  health: { label: "Health", icon: HeartPulse },
+  library: { label: "Books & Audio", icon: Library },
+  youtube: { label: "YouTube", icon: Youtube },
+  power: { label: "Display", televisionLabel: "Screen", icon: Power },
+  kiosk: { label: "Kiosk Lock", televisionLabel: "Kiosk", icon: Lock },
+  diagnostics: { label: "Logs", icon: Bug },
+  security: { label: "Security", icon: ShieldCheck },
+};
+
+export function adminTabsForDevice(standalone: boolean, isTelevision: boolean): AdminTab[] {
+  return [
+    "apps",
+    "health",
+    ...(!isTelevision ? ["library" as const] : []),
+    "youtube",
+    "power",
+    ...(standalone ? ["kiosk" as const] : []),
+    "diagnostics",
+    "security",
+  ];
+}
 
 const adminBodyFocusableSelector = [
   "button:not([disabled])",
@@ -88,6 +119,8 @@ export function AdminPanel({
   onSetAllowSameChannelRecommendations,
   manageNotifications = true,
   onSetManageNotifications = () => {},
+  libraryEnabled = false,
+  onSetLibraryEnabled = () => {},
   videos,
   onAddVideo,
   onRemoveVideo,
@@ -106,7 +139,15 @@ export function AdminPanel({
   onLibraryChanged,
   initialTab = "apps",
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+  const isTelevision = deviceProfile?.isTelevision === true;
+  const legacyTelevision = isTelevision && (deviceProfile?.sdk ?? 999) <= 28;
+  const tabOrder = useMemo(
+    () => adminTabsForDevice(standalone, isTelevision),
+    [isTelevision, standalone],
+  );
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => (
+    adminTabsForDevice(standalone, isTelevision).includes(initialTab) ? initialTab : "apps"
+  ));
   const [videoUrl, setVideoUrl] = useState("");
   const [videoTitle, setVideoTitle] = useState("");
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -119,9 +160,6 @@ export function AdminPanel({
   );
   const bodyRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<typeof activeTab, HTMLButtonElement | null>>>({});
-  const tabOrder: AdminTab[] = standalone
-    ? ["apps", "health", "library", "youtube", "power", "kiosk", "diagnostics", "security"]
-    : ["apps", "health", "library", "youtube", "power", "diagnostics", "security"];
   const isFireOs = deviceProfile?.isFireOs === true
     || kioskStatus?.homeControlMode?.startsWith("fire-") === true;
   const kioskActive = !!kioskStatus?.lockTaskActive
@@ -154,6 +192,25 @@ export function AdminPanel({
     first?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
+  const focusAdminTab = (tab: AdminTab) => {
+    const element = tabRefs.current[tab];
+    if (!element) return;
+    element.focus({ preventScroll: true });
+    const tabs = element.parentElement;
+    if (!tabs) return;
+    const left = element.offsetLeft;
+    const right = left + element.offsetWidth;
+    if (left < tabs.scrollLeft) tabs.scrollLeft = left;
+    else if (right > tabs.scrollLeft + tabs.clientWidth) {
+      tabs.scrollLeft = right - tabs.clientWidth;
+    }
+  };
+
+  const selectTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    if (tab === "security") setConfirmReset(false);
+  };
+
   const handleTabKeyDown = (tab: AdminTab, event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowDown" && tab === activeTab) {
       event.preventDefault();
@@ -167,9 +224,8 @@ export function AdminPanel({
     if (next === tab) return;
     event.preventDefault();
     event.stopPropagation();
-    setActiveTab(next);
-    tabRefs.current[next]?.focus();
-    tabRefs.current[next]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    selectTab(next);
+    window.requestAnimationFrame(() => focusAdminTab(next));
   };
 
   const handleBodyKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -186,10 +242,14 @@ export function AdminPanel({
   }, [inactivityTimeout]);
 
   useEffect(() => {
+    if (!tabOrder.includes(activeTab)) setActiveTab("apps");
+  }, [activeTab, tabOrder]);
+
+  useEffect(() => {
     resetAdminPanelScroll(bodyRef.current);
     if (!isOpen) return;
     if (activeTab === "diagnostics") refreshDiagnostics();
-    const focusTimer = window.setTimeout(() => tabRefs.current[activeTab]?.focus(), 0);
+    const focusTimer = window.setTimeout(() => focusAdminTab(activeTab), 0);
     return () => window.clearTimeout(focusTimer);
   }, [activeTab, isOpen]);
 
@@ -224,11 +284,13 @@ export function AdminPanel({
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
+      initial={legacyTelevision ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={legacyTelevision ? { duration: 0 } : undefined}
       data-dpad-scope
-      className="admin-panel-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 backdrop-blur-xl z-50 flex items-center justify-center"
+      data-legacy-tv={legacyTelevision ? "true" : "false"}
+      className={`admin-panel-backdrop fixed inset-0 bg-[oklch(14.5%_0_0)]/80 z-50 flex items-center justify-center ${legacyTelevision ? "" : "backdrop-blur-xl"}`}
       onClick={onClose}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -238,9 +300,10 @@ export function AdminPanel({
       }}
     >
       <motion.div
-        initial={{ opacity: 0, y: 50 }}
+        initial={legacyTelevision ? false : { opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
+        transition={legacyTelevision ? { duration: 0 } : undefined}
         onClick={(e) => e.stopPropagation()}
         className="admin-panel-card bg-[oklch(20.5%_0_0)] rounded-none sm:rounded-2xl w-full max-w-5xl max-h-[100dvh] sm:max-h-[85dvh] overflow-hidden flex flex-col border border-[oklch(26.9%_0_0)]"
       >
@@ -255,123 +318,45 @@ export function AdminPanel({
           </button>
         </div>
 
-        <div className="admin-panel-tabs flex shrink-0 gap-2 px-4 sm:px-8 pt-4 sm:pt-6 pb-4 border-b border-[oklch(26.9%_0_0)] overflow-x-auto">
-          <button
-            ref={(element) => { tabRefs.current.apps = element; }}
-            onClick={() => setActiveTab("apps")}
-            onKeyDown={(event) => handleTabKeyDown("apps", event)}
-            className={`px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "apps"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            Applications
-          </button>
-          <button
-            ref={(element) => { tabRefs.current.health = element; }}
-            onClick={() => setActiveTab("health")}
-            onKeyDown={(event) => handleTabKeyDown("health", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "health"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <HeartPulse className="w-4 h-4" />
-            Device Health
-          </button>
-          <button
-            ref={(element) => { tabRefs.current.library = element; }}
-            onClick={() => setActiveTab("library")}
-            onKeyDown={(event) => handleTabKeyDown("library", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "library"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <Library className="w-4 h-4" />
-            Books &amp; Audio
-          </button>
-          <button
-            ref={(element) => { tabRefs.current.youtube = element; }}
-            onClick={() => setActiveTab("youtube")}
-            onKeyDown={(event) => handleTabKeyDown("youtube", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "youtube"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <Youtube className="w-4 h-4" />
-            YouTube
-          </button>
-          <button
-            ref={(element) => { tabRefs.current.power = element; }}
-            onClick={() => setActiveTab("power")}
-            onKeyDown={(event) => handleTabKeyDown("power", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "power"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <Power className="w-4 h-4" />
-            Screen Saver
-          </button>
-          {standalone && (
-            <button
-              ref={(element) => { tabRefs.current.kiosk = element; }}
-              onClick={() => setActiveTab("kiosk")}
-              onKeyDown={(event) => handleTabKeyDown("kiosk", event)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "kiosk"
-                  ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                  : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-              }`}
-              style={{ fontWeight: 500 }}
-            >
-              <Lock className="w-4 h-4" />
-              Kiosk Lock
-            </button>
-          )}
-          <button
-            ref={(element) => { tabRefs.current.diagnostics = element; }}
-            onClick={() => setActiveTab("diagnostics")}
-            onKeyDown={(event) => handleTabKeyDown("diagnostics", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "diagnostics"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <Bug className="w-4 h-4" />
-            Bug Log
-          </button>
-          <button
-            ref={(element) => { tabRefs.current.security = element; }}
-            onClick={() => { setActiveTab("security"); setConfirmReset(false); }}
-            onKeyDown={(event) => handleTabKeyDown("security", event)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeTab === "security"
-                ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
-                : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            Security
-          </button>
+        <div
+          role="tablist"
+          aria-label="Admin sections"
+          className="admin-panel-tabs flex shrink-0 gap-2 px-4 sm:px-8 pt-4 sm:pt-6 pb-4 border-b border-[oklch(26.9%_0_0)] overflow-x-auto"
+        >
+          {tabOrder.map((tab) => {
+            const details = ADMIN_TAB_DETAILS[tab];
+            const Icon = details.icon;
+            const label = isTelevision && details.televisionLabel
+              ? details.televisionLabel
+              : details.label;
+            return (
+              <button
+                key={tab}
+                id={`admin-tab-${tab}`}
+                role="tab"
+                aria-selected={activeTab === tab}
+                aria-controls="admin-tabpanel"
+                ref={(element) => { tabRefs.current[tab] = element; }}
+                onClick={() => selectTab(tab)}
+                onKeyDown={(event) => handleTabKeyDown(tab, event)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === tab
+                    ? "bg-[oklch(48.8%_0.243_264.376)] text-[oklch(98.5%_0_0)]"
+                    : "bg-[oklch(26.9%_0_0)] text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)]"
+                }`}
+                style={{ fontWeight: 500 }}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         <div
+          id="admin-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`admin-tab-${activeTab}`}
           ref={bodyRef}
           data-dpad-content
           onKeyDownCapture={handleBodyKeyDownCapture}
@@ -388,7 +373,9 @@ export function AdminPanel({
                       className="relative group bg-[oklch(26.9%_0_0)] rounded-lg p-6 hover:bg-[oklch(43.9%_0_0)]/30 transition-colors border border-[oklch(26.9%_0_0)] hover:border-[oklch(43.9%_0_0)]"
                     >
                       <div className="flex flex-col items-center gap-3">
-                        <app.icon className="w-12 h-12 text-[oklch(70.8%_0_0)]" />
+                          {app.iconUrl
+                            ? <img src={app.iconUrl} alt="" draggable={false} className="size-14 rounded-xl object-cover" />
+                            : <app.icon className="w-12 h-12 text-[oklch(70.8%_0_0)]" />}
                         <span className="text-[oklch(87%_0_0)] text-sm text-center" style={{ fontWeight: 400 }}>{app.name}</span>
                       </div>
                       <button
@@ -424,7 +411,9 @@ export function AdminPanel({
                         className="relative group bg-[oklch(26.9%_0_0)]/50 rounded-lg p-6 hover:bg-[oklch(43.9%_0_0)]/30 transition-colors border-2 border-dashed border-[oklch(43.9%_0_0)]"
                       >
                         <div className="flex flex-col items-center gap-3">
-                          <app.icon className="w-12 h-12 text-[oklch(55.6%_0_0)]" />
+                          {app.iconUrl
+                            ? <img src={app.iconUrl} alt="" draggable={false} className="size-14 rounded-xl object-cover opacity-80" />
+                            : <app.icon className="w-12 h-12 text-[oklch(55.6%_0_0)]" />}
                           <span className="text-[oklch(70.8%_0_0)] text-sm text-center" style={{ fontWeight: 400 }}>{app.name}</span>
                         </div>
                         <button
@@ -458,12 +447,33 @@ export function AdminPanel({
                 onSetManageNotifications={onSetManageNotifications}
                 isFireOs={isFireOs}
               />
-              {deviceProfile?.isTelevision && <NetworkPrivacyPanel />}
+              {(deviceProfile?.isTelevision || isFireOs) && <NetworkPrivacyPanel />}
             </>
           )}
 
           {activeTab === "library" && (
-            <LibraryManager onLibraryChanged={onLibraryChanged} />
+            <div className="space-y-5">
+              <div className="flex min-h-16 items-center justify-between gap-4 rounded-xl border border-[oklch(40%_0_0)] bg-[oklch(25%_0_0)] p-4">
+                <div>
+                  <p className="text-base text-[oklch(98%_0_0)]" style={{ fontWeight: 600 }}>Show Books &amp; Audio on Home</p>
+                  <p className="mt-1 text-sm text-[oklch(68%_0_0)]">Hidden by default. Enable it only after adding approved books, audio, or catalogs.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={libraryEnabled}
+                  aria-label="Show Books and Audio on Home"
+                  onClick={() => onSetLibraryEnabled(!libraryEnabled)}
+                  className={`relative h-10 w-[4.5rem] shrink-0 rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${libraryEnabled
+                    ? "border-[oklch(48.8%_0.243_264.376)] bg-[oklch(48.8%_0.243_264.376)]"
+                    : "border-[oklch(55.6%_0_0)] bg-[oklch(20.5%_0_0)]"}`}
+                >
+                  <span className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white transition-transform ${libraryEnabled ? "translate-x-8" : "translate-x-1"}`} />
+                  <span className="sr-only">{libraryEnabled ? "On" : "Off"}</span>
+                </button>
+              </div>
+              <LibraryManager onLibraryChanged={onLibraryChanged} />
+            </div>
           )}
 
           {activeTab === "youtube" && (
@@ -476,7 +486,7 @@ export function AdminPanel({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border border-[oklch(43.9%_0_0)] bg-[oklch(26.9%_0_0)] p-4 sm:p-5 mb-6">
                 <div>
                   <div className="text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>
-                    Same-channel recommendations
+                    More from the same channel
                   </div>
                   <p className="text-[oklch(70.8%_0_0)] text-xs sm:text-sm">
                     Let viewers choose another video from the same approved channel when playback ends. Turn this off to return to OpenPanel instead.
@@ -555,21 +565,22 @@ export function AdminPanel({
               {videos.length === 0 ? (
                 <div className="text-center p-8 text-[oklch(55.6%_0_0)]">No approved YouTube sources yet. Verify a channel above or paste a link.</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {videos.map((v) => (
                     <div
                       key={v.id}
-                      className="relative group flex items-center gap-4 bg-[oklch(26.9%_0_0)] rounded-lg p-3 border border-[oklch(26.9%_0_0)] hover:border-[oklch(43.9%_0_0)] transition-colors"
+                      className="relative group flex min-h-24 items-center gap-4 rounded-xl border border-[oklch(36%_0_0)] bg-[oklch(24%_0_0)] p-4 hover:border-[oklch(48%_0_0)] transition-colors"
                     >
                       {v.kind === "video" || v.thumbnailUrl ? (
                         <img
                           src={v.kind === "video" ? thumbnailUrl(v.sourceId) : v.thumbnailUrl}
                           alt=""
-                          className="w-28 h-16 rounded object-cover bg-[oklch(20.5%_0_0)] shrink-0"
+                          loading="lazy"
+                          className={`youtube-channel-art shrink-0 object-cover bg-[oklch(20.5%_0_0)] ${v.kind === "channel" ? "size-16 rounded-full" : "h-16 w-28 rounded-lg"}`}
                           draggable={false}
                         />
                       ) : (
-                        <div className="w-28 h-16 rounded bg-gradient-to-br from-red-600 to-red-950 shrink-0 flex flex-col items-center justify-center text-white">
+                        <div className="youtube-channel-art size-16 rounded-full bg-red-800 shrink-0 flex flex-col items-center justify-center text-white">
                           <Youtube className="w-7 h-7" />
                           <span className="text-[10px] uppercase tracking-wide mt-1">{v.kind}</span>
                         </div>

@@ -36,10 +36,12 @@ import { loadAdminSettings, normalizeInactivityTimeoutMinutes, saveAdminSettings
 import { clearAdminConfiguration } from "./native/adminAuth";
 import { installKeyboardViewportTracking } from "./native/keyboard";
 import { installDpadNavigation } from "./native/dpadNavigation";
+import { televisionCanvasScale, televisionCanvasStyle } from "./native/tvLayout";
 import { recordDiagnostic } from "./native/diagnostics";
 import { LibraryBridge, type LibraryPublication } from "./native/LibraryBridge";
 import { LibraryCatalogBrowser } from "./components/LibraryCatalogBrowser";
 import { OpenPanelBrand } from "./components/OpenPanelBrand";
+import { MotionConfig } from "motion/react";
 
 export interface ContentItem {
   id: string;
@@ -178,6 +180,7 @@ export default function App() {
   const [manageNotifications, setManageNotifications] = useState(
     initialAdminSettings.manageNotifications,
   );
+  const [libraryEnabled, setLibraryEnabled] = useState(initialAdminSettings.libraryEnabled);
   const lastActivityRef = useRef(Date.now());
   const launchingRef = useRef(false);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -201,11 +204,21 @@ export default function App() {
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | null>(null);
   const isStandalone = appMode === "standalone";
   const panelReady = managementResolved && !needsModeSetup && !needsOnboarding;
+  const legacyTelevision = deviceProfile?.isTelevision === true
+    && (deviceProfile.sdk ?? 999) <= 28;
+  const libraryAvailable = deviceProfile !== null && deviceProfile.isTelevision !== true;
+  const televisionScale = televisionCanvasScale(
+    deviceProfile?.isTelevision === true,
+    typeof window === "undefined" ? 1600 : window.innerWidth,
+  );
 
   useEffect(() => installKeyboardViewportTracking(), []);
   useEffect(
-    () => installDpadNavigation(!!deviceProfile?.remoteUi),
-    [deviceProfile?.remoteUi],
+    () => installDpadNavigation(
+      !!deviceProfile?.remoteUi,
+      deviceProfile?.isTelevision === true && (deviceProfile.sdk ?? 999) <= 28,
+    ),
+    [deviceProfile?.isTelevision, deviceProfile?.remoteUi, deviceProfile?.sdk],
   );
 
   const chooseAppMode = useCallback((mode: AppMode) => {
@@ -228,12 +241,16 @@ export default function App() {
     // initial state was created. Refresh immediately so the new tile appears
     // on the launcher without requiring an app restart.
     setYouTubeItems(getYouTubeItems());
-    void LibraryBridge.listPublications()
-      .then(({ publications }) => setLibraryPublications(publications))
-      .catch((error) => console.error("Failed to refresh onboarding library", error));
+    if (libraryAvailable) {
+      void LibraryBridge.listPublications()
+        .then(({ publications }) => setLibraryPublications(publications))
+        .catch((error) => console.error("Failed to refresh onboarding library", error));
+    } else {
+      setLibraryPublications([]);
+    }
     setStandaloneOnboarded(true);
     setNeedsOnboarding(false);
-  }, []);
+  }, [libraryAvailable]);
 
   useEffect(() => {
     SystemBridge.setManagementMode({ mode: appMode }).catch((e) => {
@@ -275,13 +292,17 @@ export default function App() {
   ];
 
   const loadLibrary = useCallback(async () => {
+    if (!libraryAvailable) {
+      setLibraryPublications([]);
+      return;
+    }
     try {
       const { publications } = await LibraryBridge.listPublications();
       setLibraryPublications(publications);
     } catch (error) {
       console.error("Failed to load books and audio", error);
     }
-  }, []);
+  }, [libraryAvailable]);
 
   useEffect(() => {
     const staleChannels = youtubeItems.filter(channelMetadataNeedsRefresh);
@@ -361,17 +382,19 @@ export default function App() {
   const refreshStatus = useCallback(async () => {
     try {
       const [bat, wf, bt] = await Promise.all([
-        SystemBridge.getBatteryInfo(),
+        deviceProfile?.showBattery === true
+          ? SystemBridge.getBatteryInfo()
+          : Promise.resolve(null),
         SystemBridge.getWifiStatus(),
         SystemBridge.getBluetoothStatus(),
       ]);
-      setBattery(bat);
+      if (bat) setBattery(bat);
       setWifi({ connected: wf.connected, ssid: wf.ssid });
       setBtConnected(!!bt.enabled && !!bt.devices?.some(d => d.connected));
     } catch (e) {
       console.error("Failed to refresh status", e);
     }
-  }, []);
+  }, [deviceProfile?.showBattery]);
 
   const openSettings = useCallback((tab: "wifi" | "bluetooth") => {
     settingsReturnFocusRef.current = document.activeElement instanceof HTMLElement
@@ -411,7 +434,10 @@ export default function App() {
     loadApps();
     loadLibrary();
     refreshStatus();
-    const statusTimer = setInterval(refreshStatus, 15000);
+    const statusTimer = setInterval(
+      refreshStatus,
+      deviceProfile?.isTelevision === true ? 30000 : 15000,
+    );
     const appsTimer = setInterval(loadApps, 60000);
 
     const onResume = () => {
@@ -436,8 +462,10 @@ export default function App() {
     // 15s poll (which made the header read "charging" for a beat after the
     // charger was pulled). The poll stays as a backstop.
     let batteryListener: PluginListenerHandle | undefined;
-    void SystemBridge.addListener("batteryChanged", (info) => setBattery(info))
-      .then((handle) => { batteryListener = handle; });
+    if (deviceProfile?.showBattery === true) {
+      void SystemBridge.addListener("batteryChanged", (info) => setBattery(info))
+        .then((handle) => { batteryListener = handle; });
+    }
 
     return () => {
       clearInterval(statusTimer);
@@ -445,7 +473,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", onResume);
       void batteryListener?.remove();
     };
-  }, [loadApps, loadLibrary, panelReady, refreshStatus]);
+  }, [deviceProfile?.isTelevision, deviceProfile?.showBattery, loadApps, loadLibrary, panelReady, refreshStatus]);
 
   const handleLaunch = async (item: ContentItem) => {
     if (item.libraryAction === "browse") {
@@ -543,12 +571,12 @@ export default function App() {
     if (playingYouTube) setIsSleeping(false);
   }, [playingYouTube]);
 
-  // Only keep the display on while a video is actually playing. The panel lets
-  // the normal system screen timeout blank the display to save panel hours; the
-  // device stays reachable on the network (adb / remote management) with the
-  // screen off on its own — Android keeps Wi-Fi associated during screen-off.
+  // Televisions are fixed, powered displays and must remain available for the
+  // remote and ADB troubleshooting. Tablets retain the battery-friendly rule
+  // of keeping the screen awake only during playback.
   useEffect(() => {
-    if (!playingYouTube) return;
+    const shouldKeepAwake = deviceProfile?.isTelevision === true || !!playingYouTube;
+    if (!shouldKeepAwake) return;
     const syncScreenAwake = () => {
       SystemBridge.setKeepScreenOn({ enabled: document.visibilityState === "visible" })
         .catch((error) => console.error("Failed to update playback screen state", error));
@@ -560,9 +588,23 @@ export default function App() {
       SystemBridge.setKeepScreenOn({ enabled: false })
         .catch((error) => console.error("Failed to release playback screen state", error));
     };
-  }, [playingYouTube]);
+  }, [deviceProfile?.isTelevision, playingYouTube]);
+
+  // Android 9 TCL televisions need software WebView rendering during setup so
+  // D-pad focus repaints remain visible. The longer launcher surface stays on
+  // hardware rendering to avoid exhausting the legacy compositor's tile pool.
+  useEffect(() => {
+    if (deviceProfile?.isTelevision !== true) return;
+    SystemBridge.setLegacyTvCompatRendering({
+      enabled: needsModeSetup || needsOnboarding,
+    }).catch((error) => console.error("Failed to update legacy TV rendering mode", error));
+  }, [deviceProfile?.isTelevision, needsModeSetup, needsOnboarding]);
 
   useEffect(() => {
+    if (deviceProfile?.isTelevision === true) {
+      setIsSleeping(false);
+      return;
+    }
     const handleActivity = () => {
       lastActivityRef.current = Date.now();
       setIsSleeping(false);
@@ -579,7 +621,7 @@ export default function App() {
       window.removeEventListener("keydown", handleActivity);
       clearInterval(check);
     };
-  }, [inactivityTimeout, playingYouTube]);
+  }, [deviceProfile?.isTelevision, inactivityTimeout, playingYouTube]);
 
   useEffect(() => {
     if (!isSleeping) return;
@@ -594,8 +636,9 @@ export default function App() {
       inactivityTimeoutMinutes: inactivityTimeout,
       allowSameChannelRecommendations,
       manageNotifications,
+      libraryEnabled,
     });
-  }, [allowSameChannelRecommendations, hiddenApps, inactivityTimeout, manageNotifications]);
+  }, [allowSameChannelRecommendations, hiddenApps, inactivityTimeout, libraryEnabled, manageNotifications]);
 
   const updateHiddenApps = useCallback((update: (current: Set<string>) => Set<string>) => {
     setHiddenApps((current) => update(current));
@@ -607,17 +650,26 @@ export default function App() {
   }, []);
 
   const visibleApps = apps.filter(a => !hiddenApps.has(a.id));
-  const featured = featuredItem && !hiddenApps.has(featuredItem.id)
+  const featured = featuredItem
+    && !hiddenApps.has(featuredItem.id)
+    && (libraryAvailable && libraryEnabled
+      || (!featuredItem.libraryPublication && !featuredItem.libraryAction))
     ? featuredItem
-    : visibleApps[0] ?? libraryContentItems[0] ?? null;
+    : visibleApps[0]
+      ?? (libraryAvailable && libraryEnabled ? libraryContentItems[0] : null)
+      ?? youtubeContentItems[0]
+      ?? null;
 
   return (
-    <div
-      data-dpad-scope
-      data-device-type={deviceProfile?.deviceType ?? "detecting"}
-      data-input-mode={deviceProfile?.remoteUi ? "remote" : deviceProfile?.touchUi ? "touch" : "detecting"}
-      className="size-full bg-[oklch(11%_0_0)] overflow-y-auto overflow-x-hidden relative"
-    >
+    <MotionConfig reducedMotion={legacyTelevision ? "always" : "user"}>
+      <div
+        data-dpad-scope
+        data-device-type={deviceProfile?.deviceType ?? "detecting"}
+        data-legacy-tv={legacyTelevision ? "true" : "false"}
+        data-input-mode={deviceProfile?.remoteUi ? "remote" : deviceProfile?.touchUi ? "touch" : "detecting"}
+        className="openpanel-shell size-full bg-[oklch(11%_0_0)] overflow-y-auto overflow-x-hidden relative"
+        style={televisionCanvasStyle(televisionScale)}
+      >
       {/* Sleep Screen */}
       {isSleeping && (
         <div
@@ -652,6 +704,7 @@ export default function App() {
           <FeaturedHero
             item={featured}
             onLaunch={() => handleLaunch(featured)}
+            remoteMode={deviceProfile?.remoteUi === true}
           />
         ) : (
           <div className="h-[520px] flex items-center justify-center">
@@ -675,7 +728,7 @@ export default function App() {
               onLaunch={handleLaunch}
             />
           )}
-          {deviceProfile?.isTelevision !== true && (
+          {libraryAvailable && libraryEnabled && (
             <ContentRow
               title="Books & Audio"
               items={libraryContentItems}
@@ -720,10 +773,12 @@ export default function App() {
         onClose={closeAdminPanel}
         apps={visibleApps.map(g => ({
           id: g.id, name: g.title, icon: Gamepad2,
+          iconUrl: g.iconUrl,
           gradient: `bg-gradient-to-br from-[${g.coverUrl.split(", ")[0]}] to-[${g.coverUrl.split(", ")[1]}]`
         }))}
         availableApps={apps.map(g => ({
           id: g.id, name: g.title, icon: Gamepad2,
+          iconUrl: g.iconUrl,
           gradient: `bg-gradient-to-br from-[${g.coverUrl.split(", ")[0]}] to-[${g.coverUrl.split(", ")[1]}]`
         }))}
         onAddApp={(id) => updateHiddenApps((current) => { const next = new Set(current); next.delete(id); return next; })}
@@ -734,6 +789,8 @@ export default function App() {
         onSetAllowSameChannelRecommendations={setAllowSameChannelRecommendations}
         manageNotifications={manageNotifications}
         onSetManageNotifications={setManageNotifications}
+        libraryEnabled={libraryEnabled}
+        onSetLibraryEnabled={setLibraryEnabled}
         videos={youtubeItems}
         onAddVideo={(url, title, artworkUrl) => {
           const item = addYouTubeItem(url, title, artworkUrl);
@@ -818,7 +875,7 @@ export default function App() {
         />
       )}
 
-      {isLibraryBrowserOpen && (
+      {libraryAvailable && isLibraryBrowserOpen && (
         <LibraryCatalogBrowser
           onClose={() => {
             recordDiagnostic("info", "Library catalog browser closed");
@@ -863,7 +920,15 @@ export default function App() {
           outline: 3px solid rgba(255, 255, 255, 0.95) !important;
           outline-offset: 3px;
         }
+        [data-input-mode="remote"] :focus,
+        [data-input-mode="remote"] :focus-visible {
+          --tw-ring-shadow: 0 0 #0000 !important;
+          --tw-ring-offset-shadow: 0 0 #0000 !important;
+          box-shadow: none !important;
+          outline-width: 4px !important;
+        }
       `}</style>
-    </div>
+      </div>
+    </MotionConfig>
   );
 }

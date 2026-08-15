@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "motion/react";
 
 interface PinInputProps {
   onComplete: (pin: string) => void;
@@ -96,14 +95,11 @@ export function PinInput({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className="pin-entry-card bg-[oklch(20.5%_0_0)] rounded-2xl p-5 sm:p-6 w-full max-w-sm border border-[oklch(26.9%_0_0)]"
+    <div
+      className="pin-entry-card bg-[oklch(20.5%_0_0)] rounded-2xl p-4 sm:p-5 w-full max-w-lg border border-[oklch(32%_0_0)] shadow-2xl"
     >
       <h2 className="pin-entry-title text-2xl text-[oklch(98.5%_0_0)] mb-2 text-center" style={{ fontWeight: 500 }}>{title}</h2>
-      <p className="text-[oklch(60%_0_0)] text-xs sm:text-sm text-center mb-3">
+      <p className="text-[oklch(65%_0_0)] text-sm text-center mb-3">
         {inputHint}
       </p>
 
@@ -116,7 +112,7 @@ export function PinInput({
           <div
             key={index}
             aria-label={`PIN digit ${index + 1} ${index < pin.length ? "filled" : "empty"}`}
-            className={`pin-entry-digit size-11 flex items-center justify-center text-2xl bg-[oklch(26.9%_0_0)] text-[oklch(98.5%_0_0)] rounded-lg border-2 transition-colors ${
+            className={`pin-entry-digit size-12 flex items-center justify-center text-2xl bg-[oklch(24%_0_0)] text-[oklch(98.5%_0_0)] rounded-xl border-2 transition-colors ${
               index === pin.length
                 ? "border-[oklch(48.8%_0.243_264.376)]"
                 : "border-[oklch(43.9%_0_0)]"
@@ -127,7 +123,7 @@ export function PinInput({
         ))}
       </div>
 
-      <div className="pin-keypad grid grid-cols-3 gap-2 max-w-[14rem] mx-auto" aria-label="PIN keypad">
+      <div className="pin-keypad grid grid-cols-3 gap-2 max-w-[19rem] mx-auto" aria-label="PIN keypad">
         {KEYS.map((key, index) => {
           const label = key === "clear" ? "Clear PIN" : key === "delete" ? "Delete last digit" : key;
           return (
@@ -142,10 +138,10 @@ export function PinInput({
                 else addDigit(key);
               }}
               onKeyDown={(event) => moveKeypadFocus(index, event)}
-              className={`pin-keypad-key h-12 rounded-xl border focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 transition-colors ${
+              className={`pin-keypad-key min-h-14 rounded-xl border focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 active:scale-[0.98] transition-all ${
                 key === "clear" || key === "delete"
-                  ? "bg-[oklch(17%_0_0)] border-[oklch(32%_0_0)] text-[oklch(65%_0_0)] text-xs"
-                  : "bg-[oklch(26.9%_0_0)] border-[oklch(43.9%_0_0)] text-[oklch(98.5%_0_0)] text-xl hover:bg-[oklch(35%_0_0)]"
+                  ? "bg-[oklch(16%_0_0)] border-[oklch(34%_0_0)] text-[oklch(72%_0_0)] text-sm"
+                  : "bg-[oklch(25%_0_0)] border-[oklch(40%_0_0)] text-[oklch(98.5%_0_0)] text-2xl hover:bg-[oklch(33%_0_0)]"
               }`}
               style={{ fontWeight: 500 }}
             >
@@ -165,11 +161,11 @@ export function PinInput({
             keyRefs.current[10]?.focus();
           }
         }}
-        className="pin-entry-cancel w-full mt-3 py-2 rounded-lg text-[oklch(70.8%_0_0)] hover:text-[oklch(87%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 transition-colors"
+        className="pin-entry-cancel w-full min-h-12 mt-2 rounded-xl text-[oklch(70.8%_0_0)] hover:bg-[oklch(26.9%_0_0)] hover:text-[oklch(95%_0_0)] focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 transition-colors"
         style={{ fontWeight: 500 }}
       >
         Cancel
       </button>
-    </motion.div>
+    </div>
   );
 }

@@ -17,19 +17,20 @@ describe("isAllowedApp", () => {
     expect(isAllowedApp(app(), "standalone")).toBe(true);
   });
 
-  it("shows supported preinstalled Netflix apps in standalone mode", () => {
+  it("keeps Netflix and Spotify out of the child launcher", () => {
     expect(
       isAllowedApp(
         app({ packageName: "com.netflix.ninja", isSystem: true }),
         "standalone",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isAllowedApp(
         app({ packageName: "com.netflix.mediaclient", isSystem: true }),
         "standalone",
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(isAllowedApp(app({ packageName: "com.spotify.music" }), "standalone")).toBe(false);
   });
 
   it("uses ArborXR's lock-task allowlist in companion mode", () => {
@@ -50,7 +51,7 @@ describe("isAllowedApp", () => {
         }),
         "companion",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("always excludes system apps and management utilities", () => {
@@ -69,6 +70,8 @@ describe("isAllowedApp", () => {
       "dnsfilter.android",
       "moe.shizuku.privileged.api",
       "com.teslacoilsw.launcher",
+      "com.netflix.mediaclient",
+      "com.spotify.music",
     ].forEach((packageName) => {
       expect(isAllowedApp(app({ packageName }), "standalone")).toBe(false);
     });

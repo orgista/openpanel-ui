@@ -64,7 +64,7 @@ export function NetworkPrivacyPanel() {
             </h3>
           </div>
           <p className="text-sm text-[oklch(70.8%_0_0)]">
-            TV-only status for personalDNSfilter, always-on VPN, and Android Private DNS.
+          Device status for personalDNSfilter, always-on VPN, and Android Private DNS.
           </p>
         </div>
         <button
@@ -170,7 +170,7 @@ export function NetworkPrivacyPanel() {
           </p>
           {status.filterActive && (
             <p className="text-xs text-[oklch(70.8%_0_0)]">
-              The filter is already provisioned. OpenPanel keeps its phone-only configuration screen out of the TV navigation path and reports the live VPN state here.
+              The filter is already provisioned. OpenPanel keeps its configuration screen out of child navigation and reports the live VPN state here.
             </p>
           )}
           {status.arborXrManaged && !status.canManageAlwaysOn && (

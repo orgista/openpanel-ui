@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility,
   Activity,
@@ -22,7 +21,7 @@ import {
 } from "lucide-react";
 import { SystemBridge, type InstalledApp, type PermissionStatus } from "../native/SystemBridge";
 import type { DeviceProfile } from "../native/SystemBridge";
-import { setupAdmin, SECURITY_QUESTIONS } from "../native/adminAuth";
+import { isAdminConfigured, setupAdmin, SECURITY_QUESTIONS } from "../native/adminAuth";
 import { isAllowedApp } from "../native/catalog";
 import { addYouTubeItem } from "../native/youtube";
 import { PinInput } from "./PinInput";
@@ -54,6 +53,41 @@ const STEP_TITLES: Record<StepId, string> = {
   optional: "Wi-Fi & YouTube",
 };
 
+const ONBOARDING_PROGRESS_KEY = "openpanel.standalone.onboarding.progress.v1";
+
+interface OnboardingProgress {
+  stepIndex: number;
+  hiddenPackages: string[];
+}
+
+function readOnboardingProgress(): OnboardingProgress {
+  try {
+    const raw = localStorage.getItem(ONBOARDING_PROGRESS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<OnboardingProgress>;
+      return {
+        stepIndex: Number.isInteger(parsed.stepIndex) ? Math.max(0, parsed.stepIndex as number) : 0,
+        hiddenPackages: Array.isArray(parsed.hiddenPackages)
+          ? parsed.hiddenPackages.filter((item): item is string => typeof item === "string")
+          : [],
+      };
+    }
+  } catch {
+    // A corrupt progress record should never block setup.
+  }
+  return { stepIndex: isAdminConfigured() ? 1 : 0, hiddenPackages: [] };
+}
+
+function writeOnboardingProgress(progress: OnboardingProgress): void {
+  try { localStorage.setItem(ONBOARDING_PROGRESS_KEY, JSON.stringify(progress)); }
+  catch { /* setup still works for this session */ }
+}
+
+function clearOnboardingProgress(): void {
+  try { localStorage.removeItem(ONBOARDING_PROGRESS_KEY); }
+  catch { /* completion must not be blocked by storage cleanup */ }
+}
+
 const cardClass =
   "bg-[oklch(20.5%_0_0)] rounded-2xl border border-[oklch(26.9%_0_0)]";
 const primaryBtn =
@@ -63,7 +97,13 @@ const ghostBtn =
 
 // -------------------- Step 1: admin PIN --------------------
 
-function PinStep({ onDone }: { onDone: () => void }) {
+function PinStep({
+  deviceProfile,
+  onDone,
+}: {
+  deviceProfile: DeviceProfile | null;
+  onDone: () => void;
+}) {
   const [phase, setPhase] = useState<"enter" | "confirm" | "question">("enter");
   const [firstPin, setFirstPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +154,7 @@ function PinStep({ onDone }: { onDone: () => void }) {
         </p>
         <label className="block text-[oklch(80%_0_0)] text-sm mb-2">Question</label>
         <select
+          autoFocus={deviceProfile?.remoteUi === true}
           value={questionIndex}
           onChange={(e) => setQuestionIndex(Number(e.target.value))}
           className="w-full mb-4 rounded-xl bg-[oklch(26.9%_0_0)] text-[oklch(95%_0_0)] border border-[oklch(43.9%_0_0)] px-4 py-3 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
@@ -147,6 +188,11 @@ function PinStep({ onDone }: { onDone: () => void }) {
         title={phase === "enter" ? "Set a 4-digit PIN" : "Re-enter to confirm"}
         onComplete={phase === "enter" ? handleEnter : handleConfirm}
         onCancel={() => { setFirstPin(""); setError(null); setPhase("enter"); }}
+        remoteMode={deviceProfile?.remoteUi === true}
+        controllerName={deviceProfile?.controllerName?.startsWith("sim-")
+          ? null
+          : deviceProfile?.controllerName}
+        hasHardwareKeyboard={deviceProfile?.hasHardwareKeyboard === true}
       />
     </div>
   );
@@ -196,6 +242,7 @@ function PermissionsStep({
   onNext: () => void;
 }) {
   const [status, setStatus] = useState<PermissionStatus | null>(null);
+  const initialActionRef = useRef<HTMLButtonElement | null>(null);
 
   const refresh = useCallback(async () => {
     try { setStatus(await SystemBridge.getPermissionStatus()); }
@@ -301,6 +348,13 @@ function PermissionsStep({
     fireHome,
   );
   const rows = allRows.filter((row) => permissionKeys.includes(row.key));
+  const firstGrantKey = rows.find((row) => !row.granted)?.key;
+
+  useEffect(() => {
+    if (status === null || deviceProfile?.remoteUi !== true) return;
+    const frame = window.requestAnimationFrame(() => initialActionRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [deviceProfile?.remoteUi, firstGrantKey, status]);
 
   return (
     <div className={`${cardClass} p-6 w-full max-w-2xl mx-auto`}>
@@ -331,7 +385,13 @@ function PermissionsStep({
                     <Check className="size-4" /> Done
                   </span>
                 ) : (
-                  <button type="button" onClick={() => void act(row.action)} className={ghostBtn}>
+                  <button
+                    ref={row.key === firstGrantKey ? initialActionRef : undefined}
+                    type="button"
+                    autoFocus={deviceProfile?.remoteUi === true && row.key === firstGrantKey}
+                    onClick={() => void act(row.action)}
+                    className={ghostBtn}
+                  >
                     Grant
                   </button>
                 )}
@@ -359,7 +419,13 @@ function PermissionsStep({
           )}
         </div>
       )}
-      <button type="button" onClick={onNext} className={`${primaryBtn} w-full`}>
+      <button
+        ref={firstGrantKey === undefined ? initialActionRef : undefined}
+        type="button"
+        autoFocus={deviceProfile?.remoteUi === true && firstGrantKey === undefined}
+        onClick={onNext}
+        className={`${primaryBtn} w-full`}
+      >
         Continue <ArrowRight className="size-4" />
       </button>
     </div>
@@ -397,7 +463,13 @@ function DeviceHealthStep({
 
 // -------------------- Step 4: app selection --------------------
 
-function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
+function AppsStep({
+  isTelevision,
+  onNext,
+}: {
+  isTelevision: boolean;
+  onNext: (hiddenPackages: string[]) => void;
+}) {
   const [apps, setApps] = useState<InstalledApp[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -427,14 +499,22 @@ function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
   }, []);
 
   return (
-    <div className={`${cardClass} p-6 w-full max-w-3xl mx-auto flex flex-col`} style={{ maxHeight: "78vh" }}>
+    <div
+      className={`${cardClass} p-6 w-full max-w-3xl mx-auto flex flex-col`}
+      style={{ maxHeight: isTelevision ? "68vh" : "78vh" }}
+    >
       <div className="flex items-center justify-between mb-4">
         <p className="text-[oklch(70.8%_0_0)] text-sm">
           Pick which apps appear in the panel. Editable later in the Admin Panel.
         </p>
         {apps && apps.length > 0 && (
           <div className="flex gap-2 shrink-0">
-            <button type="button" className={`${ghostBtn} !py-2 !px-3 text-sm`} onClick={() => setSelected(new Set(apps.map((a) => a.packageName)))}>All</button>
+            <button
+              type="button"
+              autoFocus={isTelevision}
+              className={`${ghostBtn} !py-2 !px-3 text-sm`}
+              onClick={() => setSelected(new Set(apps.map((a) => a.packageName)))}
+            >All</button>
             <button type="button" className={`${ghostBtn} !py-2 !px-3 text-sm`} onClick={() => setSelected(new Set())}>None</button>
           </div>
         )}
@@ -484,6 +564,7 @@ function AppsStep({ onNext }: { onNext: (hiddenPackages: string[]) => void }) {
 
       <button
         type="button"
+        autoFocus={isTelevision && apps !== null && apps.length === 0}
         onClick={() => onNext((apps ?? []).filter((a) => !selected.has(a.packageName)).map((a) => a.packageName))}
         className={`${primaryBtn} w-full`}
       >
@@ -581,11 +662,43 @@ export function LibrarySetupStep({ onNext }: { onNext: () => void }) {
 
 // -------------------- Step 6: optional Wi-Fi + YouTube --------------------
 
-function OptionalStep({ onFinish }: { onFinish: () => void }) {
+export function youtubeChannelSetupError(error: unknown, value: string): string {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String(error.code)
+    : "";
+  if (code === "YOUTUBE_CHANNEL_LOOKUP_FAILED") {
+    return "Couldn’t connect to YouTube. Check this TV’s connection and try again.";
+  }
+  if (code === "YOUTUBE_CHANNEL_RATE_LIMITED") {
+    return "YouTube is temporarily limiting verification. Try again shortly.";
+  }
+  return `Couldn’t find a channel matching “${value}”. Try the exact name or its @handle.`;
+}
+
+function OptionalStep({
+  isTelevision,
+  onFinish,
+}: {
+  isTelevision: boolean;
+  onFinish: () => void;
+}) {
   const [channel, setChannel] = useState("");
   const [added, setAdded] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const channelInputRef = useRef<HTMLInputElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lookupStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (resolving) {
+      lookupStartedRef.current = true;
+      return;
+    }
+    if (!isTelevision || !lookupStartedRef.current) return;
+    const timer = window.setTimeout(() => addButtonRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [isTelevision, resolving]);
 
   // Resolve the input first (channel name, @handle, or URL) — the same path the
   // Admin YouTube search uses — so a plain name like "Homeschool Pop" works and
@@ -607,8 +720,8 @@ function OptionalStep({ onFinish }: { onFinish: () => void }) {
       }
       setAdded((prev) => [...prev, resolved.title]);
       setChannel("");
-    } catch {
-      setError(`Couldn't find a channel matching “${value}”. Try the exact name or its @handle.`);
+    } catch (lookupError) {
+      setError(youtubeChannelSetupError(lookupError, value));
     } finally {
       setResolving(false);
     }
@@ -625,7 +738,12 @@ function OptionalStep({ onFinish }: { onFinish: () => void }) {
           <Wifi className="size-5 text-[oklch(70%_0_0)]" />
           <span className="text-[oklch(93%_0_0)]" style={{ fontWeight: 500 }}>Connect Wi-Fi</span>
         </div>
-        <button type="button" onClick={() => void SystemBridge.openWifiSettings()} className={ghostBtn}>
+        <button
+          type="button"
+          autoFocus={isTelevision}
+          onClick={() => void SystemBridge.openWifiSettings()}
+          className={ghostBtn}
+        >
           Open Wi-Fi settings
         </button>
       </div>
@@ -637,14 +755,34 @@ function OptionalStep({ onFinish }: { onFinish: () => void }) {
         </div>
         <div className="flex gap-2">
           <input
+            ref={channelInputRef}
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void addChannel(); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void addChannel();
+                return;
+              }
+              if (
+                isTelevision
+                && event.key === "ArrowRight"
+                && event.currentTarget.selectionStart === event.currentTarget.value.length
+              ) {
+                event.preventDefault();
+                addButtonRef.current?.focus();
+              }
+            }}
             placeholder="Channel name, @handle, or URL"
             disabled={resolving}
             className="flex-1 rounded-xl bg-[oklch(20%_0_0)] text-[oklch(95%_0_0)] border border-[oklch(43.9%_0_0)] px-4 py-2.5 disabled:opacity-60 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
           />
-          <button type="button" onClick={() => void addChannel()} disabled={resolving} className={ghostBtn}>
+          <button
+            ref={addButtonRef}
+            type="button"
+            onClick={() => void addChannel()}
+            disabled={resolving}
+            className={ghostBtn}
+          >
             {resolving ? <Loader2 className="size-4 animate-spin" /> : "Add"}
           </button>
         </div>
@@ -669,8 +807,9 @@ export function StandaloneOnboarding({
   onSetManageNotifications,
   onComplete,
 }: StandaloneOnboardingProps) {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [hiddenPackages, setHiddenPackages] = useState<string[]>([]);
+  const initialProgress = useMemo(() => readOnboardingProgress(), []);
+  const [stepIndex, setStepIndex] = useState(initialProgress.stepIndex);
+  const [hiddenPackages, setHiddenPackages] = useState<string[]>(initialProgress.hiddenPackages);
   const isTelevision = deviceProfile?.isTelevision === true;
   const steps = useMemo(() => onboardingStepsForDevice(isTelevision), [isTelevision]);
   const safeStepIndex = Math.min(stepIndex, steps.length - 1);
@@ -690,20 +829,49 @@ export function StandaloneOnboarding({
     [safeStepIndex, steps],
   );
 
+  useEffect(() => {
+    writeOnboardingProgress({ stepIndex: safeStepIndex, hiddenPackages });
+  }, [hiddenPackages, safeStepIndex]);
+
+  const finishSetup = useCallback(() => {
+    clearOnboardingProgress();
+    onComplete(hiddenPackages);
+  }, [hiddenPackages, onComplete]);
+
   return (
-    <div data-dpad-scope className="fixed inset-0 bg-[oklch(11%_0_0)] z-[300] overflow-y-auto p-6 sm:p-10">
+    <div
+      data-dpad-scope
+      data-input-mode={isTelevision ? "remote" : "touch"}
+      className={`fixed inset-0 bg-[oklch(11%_0_0)] z-[300] overflow-y-auto ${isTelevision ? "p-5" : "p-6 sm:p-10"}`}
+    >
       <div className="max-w-3xl mx-auto">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <OpenPanelBrand iconClassName="size-12" wordmarkClassName="text-3xl sm:text-4xl" />
-          </div>
-          <h1 className="text-xl sm:text-2xl text-[oklch(85%_0_0)] mb-2" style={{ fontWeight: 500 }}>
-            {isTelevision ? "Set up this TV" : "Set up standalone kiosk"}
-          </h1>
-          <p className="text-[oklch(70.8%_0_0)]">
-            Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
-          </p>
-          <div className="flex items-center justify-center gap-2 mt-4" aria-hidden>
+        <div className={`text-center ${isTelevision ? "mb-2" : "mb-8"}`}>
+          {isTelevision ? (
+            <div className="flex items-center justify-center gap-5">
+              <OpenPanelBrand iconClassName="size-8" wordmarkClassName="text-2xl" />
+              <div className="text-left">
+                <h1 className="text-lg text-[oklch(85%_0_0)]" style={{ fontWeight: 500 }}>
+                  Set up this TV
+                </h1>
+                <p className="text-sm text-[oklch(70.8%_0_0)]">
+                  Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-center mb-4">
+                <OpenPanelBrand iconClassName="size-12" wordmarkClassName="text-3xl sm:text-4xl" />
+              </div>
+              <h1 className="text-xl sm:text-2xl text-[oklch(85%_0_0)] mb-2" style={{ fontWeight: 500 }}>
+                Set up standalone kiosk
+              </h1>
+              <p className="text-[oklch(70.8%_0_0)]">
+                Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
+              </p>
+            </>
+          )}
+          <div className={`flex items-center justify-center gap-2 ${isTelevision ? "mt-2" : "mt-4"}`} aria-hidden>
             {progress.map(({ s, done, current }) => (
               <span
                 key={s}
@@ -715,8 +883,8 @@ export function StandaloneOnboarding({
           </div>
         </div>
 
-        <motion.div key={step} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          {step === "pin" && <PinStep onDone={goNext} />}
+        <div key={step}>
+          {step === "pin" && <PinStep deviceProfile={deviceProfile} onDone={goNext} />}
           {step === "permissions" && <PermissionsStep deviceProfile={deviceProfile} onNext={goNext} />}
           {step === "health" && (
             <DeviceHealthStep
@@ -726,10 +894,15 @@ export function StandaloneOnboarding({
               onNext={goNext}
             />
           )}
-          {step === "apps" && <AppsStep onNext={handleAppsNext} />}
+          {step === "apps" && <AppsStep isTelevision={isTelevision} onNext={handleAppsNext} />}
           {step === "library" && <LibrarySetupStep onNext={goNext} />}
-          {step === "optional" && <OptionalStep onFinish={() => onComplete(hiddenPackages)} />}
-        </motion.div>
+          {step === "optional" && (
+            <OptionalStep
+              isTelevision={isTelevision}
+              onFinish={finishSetup}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
