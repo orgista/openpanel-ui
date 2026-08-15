@@ -108,12 +108,15 @@ export function DeviceHealthPanel({
 
   const toggleNotifications = async () => {
     const enabled = !manageNotifications;
+    // App.tsx owns the native sync: its manageNotifications effect calls
+    // SystemBridge.setNotificationManagement whenever this state flips. The panel
+    // must only update state here — calling the bridge as well applied the policy
+    // twice per toggle. After flipping, re-read the real device snapshot so the
+    // displayed health/app policy reflects the outcome App applies.
     onSetManageNotifications(enabled);
     setBusyKey("notifications");
     try {
-      await consumeResult(await SystemBridge.setNotificationManagement({ enabled }));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Notification policy could not be updated.");
+      await refresh();
     } finally {
       setBusyKey(null);
     }

@@ -4,9 +4,17 @@ import type { InstalledApp } from "./SystemBridge";
 /**
  * Packages that may remain installed for administration, recovery, updates, or
  * escaped-link handling but must never become child-facing OpenPanel tiles.
- * Keep this exact-name list aligned with native LaunchableAppCatalog.
+ *
+ * SINGLE WEB-SIDE SOURCE OF TRUTH for the exclusion blocklist. The native side
+ * keeps its own copy in:
+ *   android/app/src/main/java/com/orgista/openpanel/LaunchableAppCatalog.java
+ * The two lists are maintained independently and must be kept aligned by hand
+ * (there is no build-time sharing with Kotlin/Java yet). When you add or remove
+ * an entry here, mirror the same change in that file so the web and native
+ * catalogs cannot drift. Exported so any future drift check can grep/import
+ * this constant instead of re-declaring the values.
  */
-const EXCLUDED = new Set([
+export const EXCLUDED = new Set([
   "app.xrdm.client",
   "app.revanced.android.gms",
   "com.android.chrome",

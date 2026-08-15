@@ -59,8 +59,13 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
       else reject(new Error("YouTube player controls were unavailable"));
     };
 
-    const existing = document.querySelector<HTMLScriptElement>('script[data-openpanel-youtube-api="true"]');
-    if (existing) return;
+    // We only get here on a fresh attempt — an in-flight load returns the cached
+    // promise above. So any tag already in the DOM is a corpse from a previous
+    // attempt that errored or timed out (both reset iframeApiPromise to null but
+    // used to leave the tag behind, which made every retry find `existing`,
+    // bail without re-appending, wait 15s, and reject). Remove the stale tag and
+    // append a fresh one so recovery works without an app restart.
+    document.querySelector('script[data-openpanel-youtube-api="true"]')?.remove();
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
     script.async = true;
@@ -68,6 +73,7 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
     script.onerror = () => {
       window.clearTimeout(timeout);
       iframeApiPromise = null;
+      script.remove();
       reject(new Error("YouTube player controls could not load"));
     };
     document.head.appendChild(script);

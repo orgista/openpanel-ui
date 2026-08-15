@@ -3,14 +3,9 @@ import { describe, expect, it } from "vitest";
 import { SystemBridge } from "./SystemBridge";
 
 describe("SystemBridge web fallback", () => {
-  it("keeps store and admin packages installed in the preview inventory", async () => {
+  it("does not seed deployable app content in the preview inventory", async () => {
     const { apps } = await SystemBridge.getInstalledApps();
-    expect(apps.map((app) => app.packageName)).toEqual(expect.arrayContaining([
-      "com.aurora.store",
-      "org.fdroid.fdroid",
-      "dnsfilter.android",
-      "moe.shizuku.privileged.api",
-    ]));
+    expect(apps).toEqual([]);
   });
 
   it("supports an atomic kiosk exit to the standard system launcher", async () => {
@@ -75,7 +70,7 @@ describe("SystemBridge web fallback", () => {
       .resolves.toMatchObject({ available: true, enabled: false });
   });
 
-  it("exposes Google TV input capabilities and API-key-free channel resolution", async () => {
+  it("exposes Google TV input capabilities without seeding channel content", async () => {
     await expect(SystemBridge.getDeviceProfile()).resolves.toMatchObject({
       deviceType: "television",
       isTelevision: true,
@@ -89,74 +84,12 @@ describe("SystemBridge web fallback", () => {
       voiceInputAvailable: true,
     });
     await expect(SystemBridge.requestVoiceInput({ prompt: "Search YouTube" })).resolves.toEqual({
-      text: "Google Developers",
+      text: "",
     });
-    await expect(SystemBridge.resolveYouTubeChannel({ input: "Google Developers" }))
-      .resolves.toMatchObject({
-        channel: expect.objectContaining({
-          kind: "channel",
-          title: "Google for Developers",
-          sourceUrl: "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw",
-        }),
-      });
-    await expect(SystemBridge.resolveYouTubeChannel({ input: "homeschoolpop" }))
-      .resolves.toMatchObject({
-        channel: expect.objectContaining({
-          kind: "channel",
-          title: "Homeschool Pop",
-          sourceUrl: "https://www.youtube.com/channel/UCfPyVJEBD7Di1YYjTdS2v8g",
-        }),
-      });
-    await expect(SystemBridge.resolveYouTubeChannel({ input: "@kurzgesagt" }))
-      .resolves.toMatchObject({
-        channel: expect.objectContaining({
-          kind: "channel",
-          title: "Kurzgesagt – In a Nutshell",
-          sourceUrl: "https://www.youtube.com/channel/UCsXVk37bltHxD1rDPwtNM8Q",
-        }),
-      });
-    await expect(SystemBridge.resolveYouTubeChannel({ input: "PBS" }))
-      .resolves.toMatchObject({
-        channel: expect.objectContaining({
-          kind: "channel",
-          title: "PBS",
-          sourceUrl: "https://www.youtube.com/channel/UCgyeJxD05YnoDquRMNBfBqw",
-        }),
-      });
-    const pbsVideos = await SystemBridge.getYouTubeChannelVideos({
-      channelId: "UCgyeJxD05YnoDquRMNBfBqw",
-    });
-    expect(pbsVideos).toMatchObject({
-      channelTitle: "PBS",
-      hasMore: false,
-      catalogComplete: true,
-      catalogSource: "channel-page",
-    });
-    expect(pbsVideos.videos[0]).toMatchObject({
-      videoId: "kaC-n8BqNhs",
-      title: "Tig Notaro and Stephanie Allynne Draw (and Roast) Each Other",
-    });
-    const channelVideos = await SystemBridge.getYouTubeChannelVideos({
+    await expect(SystemBridge.resolveYouTubeChannel({ input: "example channel" }))
+      .rejects.toThrow("installed Android app");
+    await expect(SystemBridge.getYouTubeChannelVideos({
       channelId: "UCfPyVJEBD7Di1YYjTdS2v8g",
-    });
-    expect(channelVideos.channelTitle).toBe("Homeschool Pop");
-    expect(channelVideos.videos[0]).toMatchObject({
-      videoId: "Rf71QRZtVME",
-      title: "School Supplies in Spanish for Kids | Spanish Vocabulary Lesson",
-    });
-    expect(channelVideos.videos).toHaveLength(30);
-    expect(channelVideos).toMatchObject({
-      nextPageToken: "web-page-2",
-      hasMore: true,
-      catalogSource: "channel-page",
-    });
-    const olderVideos = await SystemBridge.getYouTubeChannelVideos({
-      channelId: "UCfPyVJEBD7Di1YYjTdS2v8g",
-      pageToken: channelVideos.nextPageToken!,
-    });
-    expect(olderVideos.videos).toHaveLength(18);
-    expect(olderVideos.hasMore).toBe(false);
-    await expect(SystemBridge.resolveYouTubeChannel({ input: "missing channel" }))
-      .rejects.toThrow("not found");
+    })).rejects.toThrow("installed Android app");
   });
 });

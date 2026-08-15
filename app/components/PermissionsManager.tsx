@@ -1,29 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
 import {
-  Accessibility,
-  Activity,
-  BatteryCharging,
-  BellOff,
-  Bluetooth,
   Check,
-  Home,
-  Layers,
   Loader2,
   Lock,
-  Shield,
-  SlidersHorizontal,
-  Wifi,
 } from "lucide-react";
-import { SystemBridge, type PermissionStatus } from "../native/SystemBridge";
-
-interface PermRow {
-  key: string;
-  label: string;
-  detail: string;
-  icon: typeof Home;
-  granted: boolean;
-  action: () => Promise<unknown>;
-}
+import { SystemBridge } from "../native/SystemBridge";
+import { usePermissionRows } from "./usePermissionRows";
 
 const rowClass = "flex items-center justify-between gap-4 p-4 bg-[oklch(26.9%_0_0)] rounded-lg";
 const grantBtn =
@@ -34,77 +15,11 @@ const grantBtn =
 // screen; the special-access rows deep-link the matching Settings screen.
 // Fully managed provisioning lives in the repository documentation because a
 // QR displayed by the target tablet disappears when that tablet is reset.
+// Rows + the auto-grant/visibility-refresh lifecycle are shared with the
+// standalone onboarding wizard via usePermissionRows().
 export function PermissionsManager() {
-  const [status, setStatus] = useState<PermissionStatus | null>(null);
-
-  const refresh = useCallback(async () => {
-    try { setStatus(await SystemBridge.getPermissionStatus()); }
-    catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try { await SystemBridge.autoGrantSelfPermissions(); } catch { /* ignore */ }
-      if (!cancelled) await refresh();
-    })();
-    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [refresh]);
-
-  const act = useCallback(async (fn: () => Promise<unknown>) => {
-    try { await fn(); } catch { /* ignore */ } finally { await refresh(); }
-  }, [refresh]);
-
+  const { status, rows, isDeviceOwner: isDO, act } = usePermissionRows();
   const s = status;
-  const isDO = !!s?.deviceOwner;
-  const fireHome = s?.homeControlMode === "fire-redirect"
-    || s?.homeControlMode === "fire-needs-accessibility";
-
-  const rows: PermRow[] = [
-    { key: "launcher", label: fireHome ? "Fire OS Home redirect" : "Home launcher", icon: Home,
-      detail: fireHome
-        ? "Fire OS reserves Home; accessibility returns it to OpenPanel."
-        : "Return to the panel with the Home button.",
-      granted: !!s?.defaultLauncher || s?.homeControlMode === "fire-redirect",
-      action: fireHome
-        ? () => SystemBridge.openAccessibilitySettings()
-        : () => SystemBridge.openLauncherSettings() },
-    { key: "admin", label: "Kiosk admin", icon: Shield,
-      detail: isDO ? "OpenPanel has full managed-device control." : "Lets OpenPanel lock the device into kiosk mode.",
-      granted: !!(s?.deviceOwner || s?.deviceAdmin), action: () => SystemBridge.requestDeviceAdmin() },
-    { key: "wifi", label: "Wi-Fi & nearby", icon: Wifi,
-      detail: "Scan and join Wi-Fi networks.",
-      granted: !!s?.location, action: () => SystemBridge.scanWifi() },
-    { key: "bluetooth", label: "Bluetooth", icon: Bluetooth,
-      detail: "Pair keyboards, controllers, and audio.",
-      granted: !!s?.bluetooth, action: () => SystemBridge.scanBluetooth() },
-    { key: "accessibility", label: "Accessibility service", icon: Accessibility,
-      detail: "Keeps Home in OpenPanel and blocks the Fire OS notification shade.",
-      granted: !!s?.accessibility, action: () => SystemBridge.openAccessibilitySettings() },
-    { key: "notifications", label: "Notification blocking", icon: BellOff,
-      detail: "Cancels nonessential app notifications while preserving kiosk and system services.",
-      granted: !!s?.notificationAccess,
-      action: () => SystemBridge.openNotificationListenerSettings() },
-    { key: "overlay", label: "Display over other apps", icon: Layers,
-      detail: "Lets OpenPanel draw over launched apps when needed.",
-      granted: !!s?.overlay, action: () => SystemBridge.openOverlaySettings() },
-    { key: "usage", label: "Usage access", icon: Activity,
-      detail: "Detects the foreground app so the kiosk can recover focus.",
-      granted: !!s?.usageAccess, action: () => SystemBridge.openUsageAccessSettings() },
-    { key: "write", label: "Modify system settings", icon: SlidersHorizontal,
-      detail: "Controls screen brightness and timeout.",
-      granted: !!s?.writeSettings, action: () => SystemBridge.openWriteSettings() },
-    { key: "battery", label: "Unrestricted battery", icon: BatteryCharging,
-      detail: "Keeps OpenPanel and the network awake in the background.",
-      granted: !!s?.batteryUnrestricted, action: () => SystemBridge.requestIgnoreBatteryOptimizations() },
-  ];
 
   if (s === null) {
     return (

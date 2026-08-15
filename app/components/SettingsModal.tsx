@@ -359,6 +359,16 @@ export function SettingsModal({
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
+  // The modal renders null while closed but never unmounts, so a Wi-Fi connect
+  // poll started before closing would keep hitting getWifiStatus for up to 25s.
+  // Stop it as soon as the modal closes, not only on unmount.
+  useEffect(() => {
+    if (!isOpen && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, [isOpen]);
+
   const startConnect = (network: WifiNetwork) => {
     if (!isAdmin) return; // joining a network is an admin-only action
     setPassword("");

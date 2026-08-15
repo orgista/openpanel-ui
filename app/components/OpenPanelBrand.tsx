@@ -1,4 +1,4 @@
-import launcherIconUrl from "../../assets/openpanel-cube-mark.svg";
+import launcherIconUrl from "../../assets/openpanel-quad-mark.svg";
 
 interface OpenPanelBrandProps {
   iconClassName?: string;
@@ -6,7 +6,7 @@ interface OpenPanelBrandProps {
   showByline?: boolean;
 }
 
-/** Shared X-to-cube family mark used by the launcher and Android icon. */
+/** Shared Quad mark used by the launcher, startup animation, and Android icon. */
 export function OpenPanelBrand({
   iconClassName = "size-8",
   wordmarkClassName = "text-[1.375rem]",

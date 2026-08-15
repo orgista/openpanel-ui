@@ -31,7 +31,9 @@ export function LibraryCatalogBrowser({ onClose, onLibraryChanged }: LibraryCata
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      if (page) setPage(null); else onClose();
+      // Clear history when leaving a catalog for the list, so Back on a freshly
+      // opened catalog can't fetch the previous catalog's stale pages.
+      if (page) { setPage(null); setHistory([]); } else onClose();
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
@@ -53,7 +55,10 @@ export function LibraryCatalogBrowser({ onClose, onLibraryChanged }: LibraryCata
   const goBack = useCallback(() => {
     const previous = history[history.length - 1];
     if (!previous) {
+      // Back from a catalog's first page returns to the list — clear history so
+      // a later catalog can't Back into this one's pages.
       setPage(null);
+      setHistory([]);
       return;
     }
     setHistory((items) => items.slice(0, -1));
@@ -143,7 +148,12 @@ export function LibraryCatalogBrowser({ onClose, onLibraryChanged }: LibraryCata
             <section aria-label="Catalog publications" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {page.entries.map((entry) => {
                 const audio = entry.format === "audiobook" || entry.format === "audio";
-                const licensed = entry.acquisitionType === "borrow" || !entry.acquisitionUrl;
+                // "buy" entries can't be saved offline either (download() rejects
+                // them), so treat them like "borrow": show the sign-in prompt
+                // rather than a misleading "Save offline" button that errors.
+                const licensed = entry.acquisitionType === "borrow"
+                  || entry.acquisitionType === "buy"
+                  || !entry.acquisitionUrl;
                 return (
                   <article key={entry.id} className="rounded-2xl border border-white/10 bg-[oklch(20.5%_0_0)] overflow-hidden" style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
                     <div className="flex gap-4 p-5">

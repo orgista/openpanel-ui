@@ -216,17 +216,35 @@ export async function verifySecurityAnswer(answer: string): Promise<boolean> {
   if (isLockedOut()) return false;
   const rec = read();
   if (!rec) return false;
+  const normalized = normalizeAnswer(answer);
   // A salted record hashes both fields with the same salt; a legacy record (or a
   // PIN-only upgrade) still has an unsalted answer hash, so fall back to sha256.
   let ok: boolean;
+  let legacyAnswerMatch = false;
   if (rec.salt) {
-    ok = safeEqual(rec.answerHash, await deriveHash(normalizeAnswer(answer), rec.salt));
-    if (!ok) ok = safeEqual(rec.answerHash, await sha256(normalizeAnswer(answer))); // pre-upgrade answer
+    ok = safeEqual(rec.answerHash, await deriveHash(normalized, rec.salt));
+    if (!ok) {
+      ok = safeEqual(rec.answerHash, await sha256(normalized)); // pre-upgrade answer
+      legacyAnswerMatch = ok;
+    }
   } else {
-    ok = safeEqual(rec.answerHash, await sha256(normalizeAnswer(answer)));
+    // No salt on the record means pinHash is still legacy too, so we can't add a
+    // salt here without breaking PIN verification (matches() keys off salt
+    // presence). The answer migrates once resetPin salts the record; from then
+    // on the salted branch above upgrades it.
+    ok = safeEqual(rec.answerHash, await sha256(normalized));
   }
-  if (ok) recordSuccess();
-  else recordFailure();
+  if (ok) {
+    recordSuccess();
+    // Upgrade a legacy (unsalted SHA-256) answer verifier to salted PBKDF2 in
+    // place, mirroring verifyPin, so a stored copy can't be reversed with a fast
+    // hash sweep.
+    if (legacyAnswerMatch && rec.salt) {
+      write({ ...rec, answerHash: await deriveHash(normalized, rec.salt) });
+    }
+  } else {
+    recordFailure();
+  }
   return ok;
 }
 

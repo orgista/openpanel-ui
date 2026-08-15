@@ -4,17 +4,6 @@
 
 const KEY = "openpanel.youtube.v2";
 const LEGACY_KEY = "openpanel.youtube.v1";
-const LEGACY_AUTOMATIC_APPROVAL_MARKER = "openpanel.youtube.requested-channels.v1";
-const LEGACY_AUTOMATIC_APPROVAL_CLEANUP = "openpanel.youtube.automatic-approvals-removed.v1";
-// Temporary migration data. These four sources shipped automatically in old
-// builds but were never administrator choices. Homeschool Pop and Kurzgesagt
-// remain because they were explicitly requested for the managed devices.
-const OBSOLETE_AUTOMATIC_CHANNEL_IDS = new Set([
-  "UCrNnk0wFBnCS1awGjq_ijGQ",
-  "UCsooa4yRKGN_zEE8iknghZA",
-  "UCoookXUzPciGrEZEXmh4Jjg",
-  "UCVzLLZkDuFGAE2BGdBuBNBg",
-]);
 
 export type YouTubeSourceKind = "video" | "channel" | "playlist";
 export type YouTubeListType = "playlist" | "user_uploads";
@@ -325,19 +314,6 @@ export function getYouTubeItems(): KioskYouTubeItem[] {
 
 /** Read only the sources an administrator has approved on this device. */
 export function initializeApprovedYouTubeItems(): KioskYouTubeItem[] {
-  try {
-    if (
-      localStorage.getItem(LEGACY_AUTOMATIC_APPROVAL_MARKER) === "1"
-      && localStorage.getItem(LEGACY_AUTOMATIC_APPROVAL_CLEANUP) !== "1"
-    ) {
-      save(getYouTubeItems().filter((item) => (
-        item.kind !== "channel" || !OBSOLETE_AUTOMATIC_CHANNEL_IDS.has(item.sourceLabel)
-      )));
-      localStorage.setItem(LEGACY_AUTOMATIC_APPROVAL_CLEANUP, "1");
-    }
-  } catch {
-    // Storage may be unavailable in a restricted browser context.
-  }
   return getYouTubeItems();
 }
 

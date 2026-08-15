@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { type PluginListenerHandle } from "@capacitor/core";
 import { Gamepad2 } from "lucide-react";
 import { StatusBar } from "./components/StatusBar";
@@ -9,7 +9,7 @@ import { ContentRow } from "./components/ContentRow";
 import { YouTubePlayer } from "./components/YouTubePlayer";
 import { YouTubeChannelBrowser } from "./components/YouTubeChannelBrowser";
 import { ModeSetup } from "./components/ModeSetup";
-import { StandaloneOnboarding } from "./components/StandaloneOnboarding";
+import { StandaloneOnboarding, PinStep } from "./components/StandaloneOnboarding";
 import {
   addYouTubeItem,
   channelIdForYouTubeItem,
@@ -33,7 +33,7 @@ import { SystemBridge, type DeviceProfile, type InstalledApp, type KioskStatus }
 import type { YouTubeChannelVideoResult } from "./native/SystemBridge";
 import { allowedAppsForDevice } from "./native/catalog";
 import { loadAdminSettings, normalizeInactivityTimeoutMinutes, saveAdminSettings } from "./native/adminSettings";
-import { clearAdminConfiguration } from "./native/adminAuth";
+import { clearAdminConfiguration, isAdminConfigured } from "./native/adminAuth";
 import { installKeyboardViewportTracking } from "./native/keyboard";
 import { installDpadNavigation } from "./native/dpadNavigation";
 import { televisionCanvasScale, televisionCanvasStyle } from "./native/tvLayout";
@@ -195,6 +195,12 @@ export default function App() {
   const [needsOnboarding, setNeedsOnboarding] = useState(
     () => getAppMode() === "standalone" && !isStandaloneOnboarded(),
   );
+  // Companion devices skip the standalone onboarding wizard (ArborXR owns
+  // lockdown), so nothing there forces an admin PIN. Track whether a local admin
+  // credential exists; when it doesn't on a companion device we force PIN
+  // creation before the kiosk is usable (see needsCompanionAdminSetup below), so
+  // a child can't be the first to create one from Settings -> Admin Mode.
+  const [adminConfigured, setAdminConfigured] = useState(() => isAdminConfigured());
   const [youtubeItems, setYouTubeItems] = useState<KioskYouTubeItem[]>(initializeApprovedYouTubeItems());
   const [browsingYouTubeChannel, setBrowsingYouTubeChannel] = useState<KioskYouTubeItem | null>(null);
   const [playingYouTube, setPlayingYouTube] = useState<KioskYouTubeItem | null>(null);
@@ -203,7 +209,13 @@ export default function App() {
   const [kioskStatus, setKioskStatus] = useState<KioskStatus | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | null>(null);
   const isStandalone = appMode === "standalone";
-  const panelReady = managementResolved && !needsModeSetup && !needsOnboarding;
+  // Force first-time admin PIN creation on companion devices before the panel is
+  // reachable. Standalone's onboarding wizard already guarantees a PIN, so this
+  // gate only applies to companion mode; it also re-triggers if the admin
+  // credential is later cleared (e.g. Reset Admin) while in companion mode.
+  const needsCompanionAdminSetup =
+    appMode === "companion" && managementResolved && !needsModeSetup && !adminConfigured;
+  const panelReady = managementResolved && !needsModeSetup && !needsOnboarding && !needsCompanionAdminSetup;
   const legacyTelevision = deviceProfile?.isTelevision === true
     && (deviceProfile.sdk ?? 999) <= 28;
   const libraryAvailable = deviceProfile !== null && deviceProfile.isTelevision !== true;
@@ -281,15 +293,21 @@ export default function App() {
     try { setKioskStatus(await SystemBridge.getKioskStatus()); } catch (e) { console.error("Failed to read kiosk status", e); }
   }, []);
 
-  const youtubeContentItems = [...youtubeItems]
-    .sort((a, b) => b.addedAt - a.addedAt)
-    .map(toYouTubeContentItem);
-  const libraryContentItems = [
-    browseLibraryItem,
-    ...[...libraryPublications]
-      .sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
-      .map(toLibraryContentItem),
-  ];
+  const youtubeContentItems = useMemo(
+    () => [...youtubeItems]
+      .sort((a, b) => b.addedAt - a.addedAt)
+      .map(toYouTubeContentItem),
+    [youtubeItems],
+  );
+  const libraryContentItems = useMemo(
+    () => [
+      browseLibraryItem,
+      ...[...libraryPublications]
+        .sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
+        .map(toLibraryContentItem),
+    ],
+    [libraryPublications],
+  );
 
   const loadLibrary = useCallback(async () => {
     if (!libraryAvailable) {
@@ -774,12 +792,10 @@ export default function App() {
         apps={visibleApps.map(g => ({
           id: g.id, name: g.title, icon: Gamepad2,
           iconUrl: g.iconUrl,
-          gradient: `bg-gradient-to-br from-[${g.coverUrl.split(", ")[0]}] to-[${g.coverUrl.split(", ")[1]}]`
         }))}
         availableApps={apps.map(g => ({
           id: g.id, name: g.title, icon: Gamepad2,
           iconUrl: g.iconUrl,
-          gradient: `bg-gradient-to-br from-[${g.coverUrl.split(", ")[0]}] to-[${g.coverUrl.split(", ")[1]}]`
         }))}
         onAddApp={(id) => updateHiddenApps((current) => { const next = new Set(current); next.delete(id); return next; })}
         onRemoveApp={(id) => updateHiddenApps((current) => new Set(current).add(id))}
@@ -832,6 +848,7 @@ export default function App() {
         onClearDeviceOwner={async () => { try { await SystemBridge.clearDeviceOwner(); } catch (e) { console.error("clear device owner", e); } setTimeout(refreshKiosk, 500); }}
         onResetAdmin={() => {
           clearAdminConfiguration();
+          setAdminConfigured(false);
           setIsAdmin(false);
           setIsAdminPanelOpen(false);
         }}
@@ -901,6 +918,34 @@ export default function App() {
           onSetManageNotifications={setManageNotifications}
           onComplete={finishOnboarding}
         />
+      )}
+
+      {/* Companion first-run gate: force an admin PIN before the kiosk is usable
+          so a child can't claim admin by being the first to set one. Reuses the
+          onboarding PinStep (PIN -> confirm -> recovery question); it has no
+          skip/cancel that dismisses, so the panel stays covered until a PIN
+          exists. */}
+      {needsCompanionAdminSetup && (
+        <div
+          data-dpad-scope
+          data-input-mode={deviceProfile?.remoteUi ? "remote" : "touch"}
+          className="fixed inset-0 z-[300] overflow-y-auto bg-[oklch(11%_0_0)] p-6 sm:p-10"
+        >
+          <div className="max-w-lg mx-auto">
+            <div className="text-center mb-8">
+              <div className="flex justify-center mb-4">
+                <OpenPanelBrand iconClassName="size-12" wordmarkClassName="text-3xl sm:text-4xl" />
+              </div>
+              <h1 className="text-xl sm:text-2xl text-[oklch(85%_0_0)] mb-2" style={{ fontWeight: 500 }}>
+                Secure this device
+              </h1>
+              <p className="text-[oklch(70.8%_0_0)]">
+                Create an admin PIN before handing the device to a child. It's required to open Settings and Admin Mode.
+              </p>
+            </div>
+            <PinStep deviceProfile={deviceProfile} onDone={() => setAdminConfigured(true)} />
+          </div>
+        </div>
       )}
 
       {!managementResolved && !needsModeSetup && (

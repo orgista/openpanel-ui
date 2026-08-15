@@ -271,80 +271,6 @@ const native = registerPlugin<SystemBridgePlugin>("SystemBridge");
 
 export const isNative = Capacitor.isNativePlatform();
 
-const webResolvedChannel: YouTubeChannelResult = {
-  kind: "channel",
-  sourceId: "UC_x5XG1OV2P6uZZ5FSM9Ttw",
-  sourceUrl: "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw",
-  title: "Google for Developers",
-  channelTitle: "Google for Developers",
-  thumbnailUrl: null,
-};
-
-const webHomeschoolPopChannel: YouTubeChannelResult = {
-  kind: "channel",
-  sourceId: "UCfPyVJEBD7Di1YYjTdS2v8g",
-  sourceUrl: "https://www.youtube.com/channel/UCfPyVJEBD7Di1YYjTdS2v8g",
-  title: "Homeschool Pop",
-  channelTitle: "Homeschool Pop",
-  thumbnailUrl: "https://yt3.googleusercontent.com/yENC7nbCi2IqwCeDy8T7Kzpcubxt-iz_yR69dlKGXvwufaEJIbk7iYYseVAqMAAoLNrs4hjR=s900-c-k-c0x00ffffff-no-rj",
-};
-
-const webKurzgesagtChannel: YouTubeChannelResult = {
-  kind: "channel",
-  sourceId: "UCsXVk37bltHxD1rDPwtNM8Q",
-  sourceUrl: "https://www.youtube.com/channel/UCsXVk37bltHxD1rDPwtNM8Q",
-  title: "Kurzgesagt – In a Nutshell",
-  channelTitle: "Kurzgesagt – In a Nutshell",
-  thumbnailUrl: "https://yt3.googleusercontent.com/ytc/AIdro_n1Ribd7LwdP_qKtqWL3ZDfIgv9M1d6g78VwpHGXVR2Ir4=s900-c-k-c0x00ffffff-no-rj",
-};
-
-const webPbsChannel: YouTubeChannelResult = {
-  kind: "channel",
-  sourceId: "UCgyeJxD05YnoDquRMNBfBqw",
-  sourceUrl: "https://www.youtube.com/channel/UCgyeJxD05YnoDquRMNBfBqw",
-  title: "PBS",
-  channelTitle: "PBS",
-  thumbnailUrl: "https://yt3.googleusercontent.com/ytc/AIdro_lbFFUNXtl50QGZiihGQlYmXWR7JpTh3E5wUg_uq9o7Ux8=s900-c-k-c0x00ffffff-no-rj",
-};
-
-const webPbsVideos: YouTubeChannelVideoResult[] = [
-  {
-    videoId: "kaC-n8BqNhs",
-    title: "Tig Notaro and Stephanie Allynne Draw (and Roast) Each Other",
-    thumbnailUrl: "https://i.ytimg.com/vi/kaC-n8BqNhs/hqdefault.jpg",
-    publishedAt: "2 days ago",
-  },
-];
-
-const webHomeschoolPopVideos: YouTubeChannelVideoResult[] = [
-  {
-    videoId: "Rf71QRZtVME",
-    title: "School Supplies in Spanish for Kids | Spanish Vocabulary Lesson",
-    thumbnailUrl: "https://i3.ytimg.com/vi/Rf71QRZtVME/hqdefault.jpg",
-    publishedAt: "2026-07-21T14:01:06+00:00",
-  },
-  {
-    videoId: "PI9tlYxluX0",
-    title: "Cactus Facts for Kids | Learn About Cacti",
-    thumbnailUrl: "https://i1.ytimg.com/vi/PI9tlYxluX0/hqdefault.jpg",
-    publishedAt: "2026-07-01T15:32:04+00:00",
-  },
-  {
-    videoId: "UhjYpF9hZJM",
-    title: "Scorpions for Kids | Scorpion Facts and Anatomy",
-    thumbnailUrl: "https://i2.ytimg.com/vi/UhjYpF9hZJM/hqdefault.jpg",
-    publishedAt: "2026-06-16T13:54:35+00:00",
-  },
-  ...Array.from({ length: 45 }, (_, index) => ({
-    videoId: `HSP${String(index + 1).padStart(8, "0")}`,
-    title: `HomeSchool Pop archive lesson ${index + 1}`,
-    thumbnailUrl: index % 2 === 0
-      ? "https://i1.ytimg.com/vi/PI9tlYxluX0/hqdefault.jpg"
-      : "https://i2.ytimg.com/vi/UhjYpF9hZJM/hqdefault.jpg",
-    publishedAt: `${index + 2} months ago`,
-  })),
-];
-
 let webManageNotifications = true;
 let webDnsFilterAlwaysOn = true;
 let webDebloatApps: DebloatApp[] = [
@@ -464,66 +390,16 @@ const webMock: SystemBridgePlugin = {
     };
   },
   async requestVoiceInput() {
-    return { text: "Google Developers" };
+    return { text: "" };
   },
-  async resolveYouTubeChannel({ input }) {
-    const normalized = input.trim().toLowerCase().replace(/[\s@]/g, "");
-    if (normalized.length < 3 || /missing|invalid|notreal/.test(normalized)) {
-      throw new Error("That exact YouTube channel was not found. Try its unique @handle.");
-    }
-    if (normalized.includes("homeschoolpop")) {
-      return { channel: webHomeschoolPopChannel };
-    }
-    if (normalized.includes("kurzgesagt")) {
-      return { channel: webKurzgesagtChannel };
-    }
-    if (normalized === "pbs" || normalized.includes("youtube.com/channel/ucgyejxd05ynodqurmnbfbqw")) {
-      return { channel: webPbsChannel };
-    }
-    return { channel: webResolvedChannel };
+  async resolveYouTubeChannel() {
+    throw new Error("YouTube channel lookup is available in the installed Android app.");
   },
-  async getYouTubeChannelVideos({ channelId, pageToken }) {
-    if (!/^UC[A-Za-z0-9_-]{22}$/.test(channelId)) {
-      throw new Error("This channel must be re-added before its videos can be explored.");
-    }
-    if (channelId === webPbsChannel.sourceId) {
-      return {
-        channelTitle: webPbsChannel.title,
-        videos: pageToken ? [] : webPbsVideos,
-        nextPageToken: null,
-        hasMore: false,
-        catalogComplete: true,
-        catalogSource: "channel-page" as const,
-      };
-    }
-    const pageIndex = pageToken === "web-page-2" ? 1 : 0;
-    const pageSize = 30;
-    const videos = webHomeschoolPopVideos.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-    const hasMore = (pageIndex + 1) * pageSize < webHomeschoolPopVideos.length;
-    return {
-      channelTitle: channelId === webHomeschoolPopChannel.sourceId
-        ? webHomeschoolPopChannel.title
-        : channelId === webKurzgesagtChannel.sourceId
-          ? webKurzgesagtChannel.title
-          : webResolvedChannel.title,
-      videos,
-      nextPageToken: hasMore ? "web-page-2" : null,
-      hasMore,
-      catalogComplete: !hasMore,
-      catalogSource: "channel-page" as const,
-    };
+  async getYouTubeChannelVideos() {
+    throw new Error("YouTube channel browsing is available in the installed Android app.");
   },
   async getInstalledApps() {
-    return {
-      apps: [
-        { packageName: "com.example.one", label: "Sample Game", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-        { packageName: "com.example.two", label: "Another Game", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-        { packageName: "com.aurora.store", label: "Aurora Store", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-        { packageName: "org.fdroid.fdroid", label: "F-Droid", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-        { packageName: "dnsfilter.android", label: "personalDNSfilter", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-        { packageName: "moe.shizuku.privileged.api", label: "Shizuku", isSystem: false, installer: null, lockTaskPermitted: true, icon: null },
-      ],
-    };
+    return { apps: [] };
   },
   async getDeviceHealth() {
     return webHealthSnapshot();

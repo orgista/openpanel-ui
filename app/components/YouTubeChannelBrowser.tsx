@@ -84,10 +84,15 @@ export function YouTubeChannelBrowser({
   const [catalogSource, setCatalogSource] = useState<"channel-page" | "recent-feed">("channel-page");
   const videoRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const loadMoreRef = useRef<HTMLButtonElement | null>(null);
+  // Grid index of the tile whose video was last opened, so focus returns there
+  // when the player closes instead of snapping back to the first tile.
+  const lastPlayedIndexRef = useRef(0);
 
   const loadVideos = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // A fresh channel load resets the grid, so start focus at the top again.
+    lastPlayedIndexRef.current = 0;
     try {
       const channelId = channelIdForYouTubeItem(item);
       if (!channelId) throw new Error("This channel must be re-added before its videos can be explored.");
@@ -137,7 +142,12 @@ export function YouTubeChannelBrowser({
 
   useEffect(() => {
     if (!active || videos.length === 0) return;
-    const focusTimer = window.setTimeout(() => videoRefs.current[0]?.focus(), 0);
+    const index = Math.min(lastPlayedIndexRef.current, videos.length - 1);
+    const focusTimer = window.setTimeout(() => {
+      const target = videoRefs.current[index] ?? videoRefs.current[0];
+      target?.focus();
+      target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, 0);
     return () => window.clearTimeout(focusTimer);
   }, [active, loading]);
 
@@ -252,7 +262,7 @@ export function YouTubeChannelBrowser({
                   key={video.videoId}
                   ref={(element) => { videoRefs.current[index] = element; }}
                   type="button"
-                  onClick={() => onPlay(video)}
+                  onClick={() => { lastPlayedIndexRef.current = index; onPlay(video); }}
                   onKeyDown={(event) => {
                     if (event.key.startsWith("Arrow") && moveFocus(index, event.key)) {
                       event.preventDefault();

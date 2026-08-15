@@ -150,27 +150,6 @@ describe("YouTube storage migration", () => {
     expect(initializeApprovedYouTubeItems()).toEqual([existing]);
   });
 
-  it("removes obsolete automatic approvals from older builds once", () => {
-    const oldDefault = addYouTubeItem(
-      "https://www.youtube.com/channel/UCrNnk0wFBnCS1awGjq_ijGQ",
-      "PBS KIDS",
-    );
-    const requested = addYouTubeItem(
-      "https://www.youtube.com/channel/UCfPyVJEBD7Di1YYjTdS2v8g",
-      "Homeschool Pop",
-    );
-    localStorage.setItem("openpanel.youtube.requested-channels.v1", "1");
-
-    expect(initializeApprovedYouTubeItems()).toEqual([requested]);
-    expect(oldDefault).not.toBeNull();
-
-    const readded = addYouTubeItem(
-      "https://www.youtube.com/channel/UCrNnk0wFBnCS1awGjq_ijGQ",
-      "PBS KIDS",
-    );
-    expect(initializeApprovedYouTubeItems()).toEqual([requested, readded]);
-  });
-
   it("persists verified channel artwork for the home screen", () => {
     const item = addYouTubeItem(
       "https://www.youtube.com/channel/UCfPyVJEBD7Di1YYjTdS2v8g",

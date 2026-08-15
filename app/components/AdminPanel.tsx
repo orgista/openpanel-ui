@@ -18,7 +18,6 @@ interface App {
   name: string;
   icon: LucideIcon;
   iconUrl?: string;
-  gradient: string;
 }
 
 interface AdminPanelProps {

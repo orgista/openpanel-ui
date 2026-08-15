@@ -66,16 +66,29 @@ export function parseDiagnosticEntries(raw: string | null): DiagnosticEntry[] {
   }
 }
 
+// In-memory copy of the ring buffer. Parsed from storage once on first access,
+// then kept in sync by write-through in recordDiagnostic/clearDiagnostics — so a
+// burst of console.warn/error no longer re-parses all 200 entries per event.
+let cachedEntries: DiagnosticEntry[] | null = null;
+
+function loadCache(): DiagnosticEntry[] {
+  if (cachedEntries === null) {
+    cachedEntries = parseDiagnosticEntries(localStorage.getItem(KEY));
+  }
+  return cachedEntries;
+}
+
 export function getDiagnostics(): DiagnosticEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    return parseDiagnosticEntries(localStorage.getItem(KEY));
+    return [...loadCache()];
   } catch {
     return [];
   }
 }
 
 export function clearDiagnostics(): void {
+  cachedEntries = [];
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(KEY);
@@ -112,7 +125,13 @@ export function recordDiagnostic(
   };
   if (typeof window === "undefined") return entry;
   try {
-    const entries = [...getDiagnostics(), entry].slice(-MAX_ENTRIES);
+    // Mutate the cached array in place and write through, rather than parsing all
+    // stored entries back out on every event.
+    const entries = loadCache();
+    entries.push(entry);
+    if (entries.length > MAX_ENTRIES) {
+      entries.splice(0, entries.length - MAX_ENTRIES);
+    }
     localStorage.setItem(KEY, JSON.stringify(entries));
   } catch {
     // Keep running even if private storage is unavailable or full.
