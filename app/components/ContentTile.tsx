@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { BookOpen, Headphones, Library, ListVideo, Play } from "lucide-react";
 import type { Ref } from "react";
 import type { ContentItem } from "../App";
+import { ArtImage, LetterAvatar } from "./ArtImage";
 
 interface ContentTileProps {
   item: ContentItem;
@@ -9,6 +10,7 @@ interface ContentTileProps {
   onSelect: () => void;
   onLaunch: () => void;
   onNavigate?: (direction: "left" | "right") => void;
+  onArtFailure?: (item: ContentItem) => void;
   buttonRef?: Ref<HTMLButtonElement>;
 }
 
@@ -21,7 +23,7 @@ const BADGE_STYLES = {
 // First tap selects the tile — it pops (scale + play chip) and the hero
 // switches to it. Tapping the already-selected tile launches. Same
 // focus-then-open flow as a TV launcher.
-export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, buttonRef }: ContentTileProps) {
+export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, onArtFailure, buttonRef }: ContentTileProps) {
   const isLandscape = item.tileType === "landscape";
 
   return (
@@ -49,12 +51,19 @@ export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, 
       }}
     >
       <div className="relative w-full h-full rounded-lg overflow-hidden">
-        {/* Poster background */}
+        {/* Poster background — falls back to the gradient if art can't load */}
         {item.imageUrl ? (
-          <img
+          <ArtImage
             src={item.imageUrl}
             alt={item.title}
             className="absolute inset-0 w-full h-full object-cover object-center"
+            fallback={
+              <div
+                className="absolute inset-0"
+                style={{ background: `linear-gradient(135deg, ${item.coverUrl})` }}
+              />
+            }
+            onPermanentFailure={onArtFailure ? () => onArtFailure(item) : undefined}
           />
         ) : (
           <div
@@ -63,14 +72,15 @@ export function ContentTile({ item, isSelected, onSelect, onLaunch, onNavigate, 
           />
         )}
 
-        {/* App icon centered over gradient */}
+        {/* App icon centered over gradient — letter avatar if art can't load */}
         {!item.imageUrl && item.iconUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <img
+            <ArtImage
               src={item.iconUrl}
               alt=""
               className="w-20 h-20 rounded-2xl shadow-2xl"
-              draggable={false}
+              fallback={<LetterAvatar label={item.title} className="w-20 h-20 rounded-2xl shadow-2xl text-3xl" />}
+              onPermanentFailure={onArtFailure ? () => onArtFailure(item) : undefined}
             />
           </div>
         )}

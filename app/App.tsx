@@ -14,6 +14,7 @@ import {
   addYouTubeItem,
   channelIdForYouTubeItem,
   channelMetadataNeedsRefresh,
+  compactChannelArtUrl,
   displayTitleForYouTubeItem,
   getYouTubeItems,
   initializeApprovedYouTubeItems,
@@ -321,6 +322,72 @@ export default function App() {
       console.error("Failed to load books and audio", error);
     }
   }, [libraryAvailable]);
+
+  // Channel art durability: the WebView's own image loads flake on some
+  // tablets/networks (no IPv4-first DNS) and remote URLs rot, so channel art is
+  // fetched through the native HTTP stack and persisted inline as a data URL.
+  const inlineChannelArt = useCallback(async (artUrl: string): Promise<string | null> => {
+    try {
+      const { dataUrl } = await SystemBridge.fetchImageAsDataUrl({ url: compactChannelArtUrl(artUrl) });
+      return dataUrl || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Migrate any channel still storing a remote art URL to inline art.
+  const migratedArtRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pending = youtubeItems.filter((item) =>
+      item.kind === "channel"
+      && item.thumbnailUrl
+      && !item.thumbnailUrl.startsWith("data:")
+      && !migratedArtRef.current.has(item.id));
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      let changed = false;
+      for (const item of pending) {
+        if (cancelled) return;
+        migratedArtRef.current.add(item.id);
+        const channelId = channelIdForYouTubeItem(item);
+        if (!channelId || !item.thumbnailUrl) continue;
+        const inline = await inlineChannelArt(item.thumbnailUrl);
+        if (!inline) {
+          migratedArtRef.current.delete(item.id); // retry on a later pass
+          continue;
+        }
+        if (addYouTubeItem(`https://www.youtube.com/channel/${channelId}`, item.title, inline)) {
+          changed = true;
+        }
+      }
+      if (changed && !cancelled) setYouTubeItems(getYouTubeItems());
+    })();
+    return () => { cancelled = true; };
+  }, [youtubeItems, inlineChannelArt]);
+
+  // Self-healing channel art: when a channel avatar permanently fails to load
+  // (stored URL rotted), re-resolve the channel and persist fresh inline art.
+  const healedArtRef = useRef<Set<string>>(new Set());
+  const handleYouTubeArtFailure = useCallback(async (content: ContentItem) => {
+    const youtubeItem = content.youtubeItem;
+    if (!youtubeItem || youtubeItem.kind !== "channel") return;
+    const channelId = channelIdForYouTubeItem(youtubeItem);
+    if (!channelId || healedArtRef.current.has(channelId)) return;
+    healedArtRef.current.add(channelId);
+    try {
+      const { channel } = await SystemBridge.resolveYouTubeChannel({ input: channelId });
+      if (!channel?.thumbnailUrl) return;
+      const art = (await inlineChannelArt(channel.thumbnailUrl)) ?? channel.thumbnailUrl;
+      if (art === youtubeItem.thumbnailUrl) return;
+      if (addYouTubeItem(channel.sourceUrl, channel.title || youtubeItem.title, art)) {
+        setYouTubeItems(getYouTubeItems());
+      }
+    } catch (error) {
+      console.warn("Could not refresh saved YouTube channel art", error);
+      healedArtRef.current.delete(channelId); // a later failure may retry (e.g. once online)
+    }
+  }, [inlineChannelArt]);
 
   useEffect(() => {
     const staleChannels = youtubeItems.filter(channelMetadataNeedsRefresh);
@@ -762,6 +829,7 @@ export default function App() {
               selectedId={featured?.id ?? null}
               onSelect={setFeaturedItem}
               onLaunch={handleLaunch}
+              onArtFailure={(item) => void handleYouTubeArtFailure(item)}
             />
           )}
         </div>

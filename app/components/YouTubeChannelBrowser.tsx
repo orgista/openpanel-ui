@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowLeft, Loader2, Play, RefreshCw, Youtube } from "lucide-react";
+import { ArtImage, LetterAvatar } from "./ArtImage";
 
 import {
   SystemBridge,
@@ -204,7 +205,15 @@ export function YouTubeChannelBrowser({
           <ArrowLeft className="size-6" />
         </button>
         {item.thumbnailUrl ? (
-          <img src={item.thumbnailUrl} alt="" className="size-14 rounded-xl object-cover bg-black" draggable={false} />
+          <ArtImage
+            src={item.thumbnailUrl}
+            className="size-14 rounded-xl object-cover bg-black"
+            fallback={
+              <div className="size-14 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center">
+                <Youtube className="size-7" />
+              </div>
+            }
+          />
         ) : (
           <div className="size-14 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center">
             <Youtube className="size-7" />
@@ -272,11 +281,10 @@ export function YouTubeChannelBrowser({
                   className="group text-left rounded-xl overflow-hidden bg-[oklch(20%_0_0)] border border-white/10 hover:border-white/40 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/90 transition-all"
                 >
                   <div className="relative aspect-video bg-black overflow-hidden">
-                    <img
+                    <ArtImage
                       src={video.thumbnailUrl}
-                      alt=""
                       className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03] group-focus:scale-[1.03]"
-                      draggable={false}
+                      fallback={<LetterAvatar label={video.title} className="size-full text-4xl" />}
                     />
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-black/35 group-focus:bg-black/35 transition-colors" />
                     <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity">

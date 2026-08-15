@@ -196,6 +196,8 @@ interface SystemBridgePlugin {
   getDeviceProfile(): Promise<DeviceProfile>;
   requestVoiceInput(opts?: { prompt?: string }): Promise<{ text: string }>;
   resolveYouTubeChannel(opts: { input: string }): Promise<{ channel: YouTubeChannelResult }>;
+  /** Fetch a trusted YouTube image via the native HTTP stack (IPv4-first DNS) as a data URL. */
+  fetchImageAsDataUrl(opts: { url: string }): Promise<{ dataUrl: string }>;
   getYouTubeChannelVideos(opts: { channelId: string; pageToken?: string }): Promise<{
     channelTitle: string;
     videos: YouTubeChannelVideoResult[];
@@ -396,6 +398,19 @@ const webMock: SystemBridgePlugin = {
   },
   async resolveYouTubeChannel() {
     throw new Error("YouTube channel lookup is available in the installed Android app.");
+  },
+  async fetchImageAsDataUrl({ url }: { url: string }) {
+    // Browser dev fallback: fetch directly and inline the result.
+    const response = await fetch(url, { mode: "cors" });
+    if (!response.ok) throw new Error(`Image fetch failed: HTTP ${response.status}`);
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Image could not be encoded."));
+      reader.readAsDataURL(blob);
+    });
+    return { dataUrl };
   },
   async getYouTubeChannelVideos() {
     throw new Error("YouTube channel browsing is available in the installed Android app.");

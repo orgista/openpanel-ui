@@ -9,9 +9,10 @@ interface ContentRowProps {
   selectedId: string | null;
   onSelect: (item: ContentItem) => void;
   onLaunch: (item: ContentItem) => void;
+  onArtFailure?: (item: ContentItem) => void;
 }
 
-export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: ContentRowProps) {
+export function ContentRow({ title, items, selectedId, onSelect, onLaunch, onArtFailure }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [showLeft, setShowLeft] = useState(false);
@@ -97,6 +98,7 @@ export function ContentRow({ title, items, selectedId, onSelect, onLaunch }: Con
                 isSelected={item.id === selectedId}
                 onSelect={() => onSelect(item)}
                 onLaunch={() => onLaunch(item)}
+                onArtFailure={onArtFailure}
                 onNavigate={(direction) => moveTileFocus(index, direction)}
                 buttonRef={(element) => { tileRefs.current[index] = element; }}
               />

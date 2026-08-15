@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Maximize, X } from "lucide-react";
-import { embedUrl, type KioskYouTubeItem } from "../native/youtube";
+import { ListVideo, Maximize, X } from "lucide-react";
+import { channelIdForYouTubeItem, embedUrl, thumbnailUrl, type KioskYouTubeItem } from "../native/youtube";
+import { SystemBridge, type YouTubeChannelVideoResult } from "../native/SystemBridge";
+import { ArtImage, LetterAvatar } from "./ArtImage";
 import { recordDiagnostic } from "../native/diagnostics";
 
 interface YouTubePlayerProps {
@@ -13,6 +15,7 @@ interface YouTubePlayerProps {
 interface YouTubePlayerInstance {
   destroy(): void;
   getVideoData?(): { title?: string; video_id?: string };
+  loadVideoById?(videoId: string): void;
 }
 
 interface YouTubePlayerEvent {
@@ -112,6 +115,12 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
   const closedRef = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [currentTitle, setCurrentTitle] = useState(item.title);
+  const [relatedVideos, setRelatedVideos] = useState<YouTubeChannelVideoResult[]>([]);
+  const relatedVideosRef = useRef<YouTubeChannelVideoResult[]>([]);
+  const [relatedChannelTitle, setRelatedChannelTitle] = useState("");
+  const [showRelated, setShowRelated] = useState(false);
+  const [videoOverride, setVideoOverride] = useState<string | null>(null);
+  const channelId = allowSameChannelRecommendations ? channelIdForYouTubeItem(item) : "";
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -163,12 +172,50 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
   useEffect(() => {
     closedRef.current = false;
     setCurrentTitle(item.title);
+    setVideoOverride(null);
+    setShowRelated(false);
     recordDiagnostic("info", "YouTube playback opened", {
       kind: item.kind,
       sourceId: item.sourceId,
       title: item.title,
     });
   }, [item]);
+
+  // Same-channel picker: preload the approved channel's videos so the viewer
+  // can choose another one from inside the player (and when playback ends).
+  useEffect(() => {
+    if (!channelId) {
+      setRelatedVideos([]);
+      return;
+    }
+    let cancelled = false;
+    SystemBridge.getYouTubeChannelVideos({ channelId })
+      .then((response) => {
+        if (cancelled) return;
+        setRelatedChannelTitle(response.channelTitle.trim());
+        const videos = response.videos.slice(0, 12);
+        setRelatedVideos(videos);
+        relatedVideosRef.current = videos;
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedVideos([]);
+      });
+    return () => { cancelled = true; };
+  }, [channelId]);
+
+  const playRelatedVideo = useCallback((video: YouTubeChannelVideoResult) => {
+    setShowRelated(false);
+    setCurrentTitle(video.title);
+    recordDiagnostic("info", "Same-channel video selected in player", { videoId: video.videoId });
+    const player = playerRef.current;
+    if (player?.loadVideoById) {
+      player.loadVideoById(video.videoId);
+    } else {
+      // No JS API (script blocked/slow) — swap the iframe to the chosen video.
+      setVideoOverride(video.videoId);
+    }
+    surfaceRef.current?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -192,12 +239,19 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
               if (event.data === 1) {
                 const videoData = event.target.getVideoData?.();
                 if (videoData?.title) setCurrentTitle(videoData.title);
+                setShowRelated(false);
               }
               if (shouldReturnToChannel(event.data, allowSameChannelRecommendations)) {
                 recordDiagnostic("info", "YouTube playback ended; returning to channel", {
                   sourceId: item.sourceId,
                 });
                 closePlayer();
+                return;
+              }
+              // Video ended with same-channel picks allowed: surface OUR picker
+              // instead of relying on the embed's end screen.
+              if (event.data === 0 && item.kind === "video") {
+                setShowRelated((current) => current || relatedVideosRef.current.length > 0);
               }
             },
             onError: (event) => {
@@ -269,8 +323,10 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
       <iframe
         id="openpanel-youtube-player"
         ref={iframeRef}
-        key={item.id}
-        src={embedUrl(item, appOrigin)}
+        key={videoOverride ?? item.id}
+        src={videoOverride
+          ? embedUrl({ kind: "video", sourceId: videoOverride, sourceLabel: videoOverride }, appOrigin)
+          : embedUrl(item, appOrigin)}
         title={item.title}
         tabIndex={-1}
         className="absolute inset-0 size-full border-0 bg-black"
@@ -295,6 +351,17 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
           controlsVisible ? "translate-y-0" : "pointer-events-none -translate-y-full"
         }`}
       >
+        {relatedVideos.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { setShowRelated(true); hideControls(); }}
+            aria-label="More videos from this channel"
+            tabIndex={controlsVisible ? 0 : -1}
+            className="inline-flex items-center gap-2 rounded-full bg-white/10 px-5 py-3 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/90"
+          >
+            <ListVideo className="size-5" /> <span>More videos</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={closePlayer}
@@ -314,6 +381,54 @@ export function YouTubePlayer({ item, allowSameChannelRecommendations, onClose }
           <Maximize className="size-5" /> <span>Full Screen</span>
         </button>
       </header>
+
+      {/* Same-channel picker: kiosk-controlled "watch next" (shown on demand
+          and when a video ends), instead of YouTube's embed end screen. */}
+      {showRelated && relatedVideos.length > 0 && (
+        <div
+          role="dialog"
+          aria-label={`More videos from ${relatedChannelTitle || item.title}`}
+          className="absolute inset-0 z-30 flex flex-col bg-black/95 text-white"
+        >
+          <header className="flex h-20 shrink-0 items-center justify-between border-b border-white/10 px-6">
+            <h2 className="truncate text-xl" style={{ fontWeight: 650 }}>
+              More from {relatedChannelTitle || item.title}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowRelated(false)}
+              aria-label="Close video picker"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-5 py-3 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/90"
+            >
+              <X className="size-5" /> <span>Close</span>
+            </button>
+          </header>
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+              {relatedVideos.map((video) => (
+                <button
+                  key={video.videoId}
+                  type="button"
+                  onClick={() => playRelatedVideo(video)}
+                  aria-label={`Play ${video.title}`}
+                  className="group overflow-hidden rounded-xl border border-white/10 bg-[oklch(20%_0_0)] text-left transition-all hover:border-white/40 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/90"
+                >
+                  <div className="relative aspect-video overflow-hidden bg-black">
+                    <ArtImage
+                      src={video.thumbnailUrl || thumbnailUrl(video.videoId)}
+                      className="size-full object-cover"
+                      fallback={<LetterAvatar label={video.title} className="size-full text-3xl" />}
+                    />
+                  </div>
+                  <p className="line-clamp-2 p-3 text-sm leading-snug" style={{ fontWeight: 600 }}>
+                    {video.title}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

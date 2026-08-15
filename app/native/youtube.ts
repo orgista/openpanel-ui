@@ -64,6 +64,10 @@ function youtubeUrl(input: string): URL | null {
 
 function cleanThumbnailUrl(value: string | null | undefined): string {
   if (!value) return "";
+  // Natively fetched art stored inline: immune to URL rot and Wi-Fi races.
+  if (/^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(value) && value.length <= 700_000) {
+    return value;
+  }
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
@@ -73,6 +77,11 @@ function cleanThumbnailUrl(value: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+/** Request a tile-sized variant so inline storage stays small (~10-20 KB). */
+export function compactChannelArtUrl(url: string): string {
+  return url.replace(/=s\d+-/, "=s176-");
 }
 
 /** Extract a YouTube video id from a watch/share/embed/shorts/live URL or bare id. */
