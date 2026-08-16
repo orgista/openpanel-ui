@@ -934,7 +934,7 @@ export function SettingsModal({
                     {!btScanning && btDevices.length === 0 && !btError && (
                       <div className="text-center p-8 text-[oklch(55.6%_0_0)]">
                         {btEnabled
-                          ? 'No devices yet — tap "Scan for devices" to discover nearby Bluetooth devices in pairing mode'
+                          ? "No devices found. Put a device in pairing mode, then Scan."
                           : "Turn on Bluetooth to pair controllers, headsets and other devices"}
                       </div>
                     )}

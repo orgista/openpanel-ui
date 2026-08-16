@@ -46,7 +46,7 @@ export function YouTubeSearchPanel({ approvedItems, deviceProfile, onAdd }: YouT
   const resolveChannel = async (nextInput = input) => {
     const normalized = nextInput.trim();
     if (normalized.length < 2) {
-      setError("Enter a channel name or its unique @handle.");
+      setError("Enter a channel name or @handle.");
       return;
     }
     await dismissSoftKeyboard();

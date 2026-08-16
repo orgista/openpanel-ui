@@ -115,7 +115,7 @@ export function AdminAuth({
   };
   const handleSetupConfirm = (pin: string) => {
     if (pin !== firstPin) {
-      setError("PINs didn't match. Let's try again.");
+      setError("PINs didn't match. Start over.");
       setStep("setup-pin");
       return;
     }
@@ -124,7 +124,7 @@ export function AdminAuth({
   };
   const handleFinishSetup = async () => {
     if (answer.trim().length < 2) {
-      setError("Please enter a recovery answer.");
+      setError("Enter a recovery answer.");
       return;
     }
     setBusy(true);

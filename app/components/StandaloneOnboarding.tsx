@@ -617,7 +617,7 @@ function OptionalStep({
   return (
     <div className={`${cardClass} p-6 w-full max-w-2xl mx-auto`}>
       <p className="text-[oklch(70.8%_0_0)] text-sm mb-5">
-        Optional — you can also do these anytime from Settings and the Admin Panel.
+        You can also set these up later from Settings or the Admin Panel.
       </p>
 
       <div className="rounded-xl bg-[oklch(24%_0_0)] px-4 py-4 mb-4">
@@ -741,7 +741,7 @@ export function StandaloneOnboarding({
                   Set up this TV
                 </h1>
                 <p className="text-sm text-[oklch(70.8%_0_0)]">
-                  Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
+                  Step {safeStepIndex + 1} of {steps.length} · {STEP_TITLES[step]}
                 </p>
               </div>
             </div>
@@ -754,7 +754,7 @@ export function StandaloneOnboarding({
                 Set up standalone kiosk
               </h1>
               <p className="text-[oklch(70.8%_0_0)]">
-                Step {safeStepIndex + 1} of {steps.length} — {STEP_TITLES[step]}
+                Step {safeStepIndex + 1} of {steps.length} · {STEP_TITLES[step]}
               </p>
             </>
           )}

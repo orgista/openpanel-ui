@@ -136,7 +136,7 @@ const browseLibraryItem: ContentItem = {
   title: "Browse Library",
   libraryAction: "browse",
   coverUrl: "#0f766e, #042f2e",
-  description: "Explore approved OPDS catalogs and save books or audiobooks for offline use.",
+  description: "Save books and audiobooks from approved catalogs for offline reading.",
   genre: "Library Catalogs",
   category: "library",
   tileType: "portrait",

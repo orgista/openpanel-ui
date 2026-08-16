@@ -130,7 +130,7 @@ export function usePermissionRows(
     },
     {
       key: "notifications", label: "Notification blocking", icon: BellOff,
-      detail: "Cancels nonessential app notifications while preserving kiosk and system services.",
+      detail: "Silences nonessential app notifications.",
       granted: !!s?.notificationAccess,
       action: () => SystemBridge.openNotificationListenerSettings(),
     },

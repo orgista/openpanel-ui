@@ -26,7 +26,7 @@ describe("PinInput", () => {
     expect(html).toContain('aria-label="1"');
     expect(html).toContain('aria-label="Delete last digit"');
     expect(html).toContain("Chromecast Voice Remote");
-    expect(html).toContain("use the D-pad and OK");
+    expect(html).toContain("Use the D-pad and OK");
     expect(html).toContain("Number keys also work");
     expect(html).not.toContain("<input");
     expect(html).toContain("pin-entry-cancel");

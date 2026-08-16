@@ -76,6 +76,6 @@ describe("StatusBar", () => {
 
     expect(html).not.toContain("data-battery-gauge");
     expect(html).not.toContain('aria-label="Battery 10%"');
-    expect(html).not.toContain("Low battery — please charge soon");
+    expect(html).not.toContain("Low battery. Charge soon.");
   });
 });

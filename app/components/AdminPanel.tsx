@@ -456,7 +456,7 @@ export function AdminPanel({
               <div className="flex min-h-16 items-center justify-between gap-4 rounded-xl border border-[oklch(40%_0_0)] bg-[oklch(25%_0_0)] p-4">
                 <div>
                   <p className="text-base text-[oklch(98%_0_0)]" style={{ fontWeight: 600 }}>Show Books &amp; Audio on Home</p>
-                  <p className="mt-1 text-sm text-[oklch(68%_0_0)]">Hidden by default. Enable it only after adding approved books, audio, or catalogs.</p>
+                  <p className="mt-1 text-sm text-[oklch(68%_0_0)]">Hidden until you add approved books, audio, or catalogs.</p>
                 </div>
                 <ToggleSwitch
                   checked={libraryEnabled}
@@ -481,7 +481,7 @@ export function AdminPanel({
                     More from the same channel
                   </div>
                   <p className="text-[oklch(70.8%_0_0)] text-xs sm:text-sm">
-                    Let viewers choose another video from the same approved channel when playback ends. Turn this off to return to OpenPanel instead.
+                    When a video ends, viewers can pick another from the same channel. Off returns to OpenPanel.
                   </p>
                 </div>
                 <ToggleSwitch
@@ -499,7 +499,7 @@ export function AdminPanel({
 
               <div className="bg-[oklch(26.9%_0_0)] rounded-lg p-4 sm:p-5 mb-8">
                 <div className="text-[oklch(98.5%_0_0)] mb-1" style={{ fontWeight: 500 }}>Paste a YouTube link</div>
-                <p className="text-[oklch(60%_0_0)] text-xs sm:text-sm mb-4">Use this when you already have a video, playlist, or channel URL. Channel names and handles can be verified above.</p>
+                <p className="text-[oklch(60%_0_0)] text-xs sm:text-sm mb-4">For a video, playlist, or channel URL. Verify channels by name or @handle above.</p>
                 <label className="block text-[oklch(70.8%_0_0)] text-sm mb-2" style={{ fontWeight: 500 }}>YouTube URL</label>
                 <input
                   type="text"

@@ -26,7 +26,7 @@ export function PinInput({
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const controllerLabel = controllerName?.trim();
   const inputHint = remoteMode
-    ? `${controllerLabel || "TV remote"} — use the D-pad and OK.${hasHardwareKeyboard ? " Number keys also work." : ""}`
+    ? `Use the D-pad and OK on the ${controllerLabel || "TV remote"}.${hasHardwareKeyboard ? " Number keys also work." : ""}`
     : hasHardwareKeyboard
       ? "Use the keypad or number keys"
       : "Tap the keypad to enter your PIN";

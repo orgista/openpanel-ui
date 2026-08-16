@@ -106,7 +106,7 @@ function sendToNative(entry: DiagnosticEntry): void {
   }).Capacitor;
   const write = capacitor?.Plugins?.SystemBridge?.writeDiagnostic;
   if (!write) return;
-  const suffix = entry.details ? ` — ${entry.details}` : "";
+  const suffix = entry.details ? `: ${entry.details}` : "";
   void write({ level: entry.level, message: `${entry.message}${suffix}` })
     .catch(() => {});
 }

@@ -190,7 +190,7 @@ export function StatusBar({ onSettingsClick, onWifiClick, onBluetoothClick, isWi
           >
             <BatteryLow className="w-4 h-4 text-[oklch(82.8%_0.189_84.429)]" />
             <span className="text-[oklch(87%_0_0)] text-sm" style={{ fontWeight: 500 }}>
-              Low battery — please charge soon
+              Low battery. Charge soon.
             </span>
           </motion.div>
         )}
